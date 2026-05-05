@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Video Vault 設定</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      }
+      body {
+        max-width: 480px;
+        margin: 0;
+        padding: 24px;
+        background: #18181b;
+        color: #f4f4f5;
+      }
+      h1 {
+        font-size: 16px;
+        font-weight: 600;
+        margin: 0 0 16px;
+      }
+      label {
+        display: block;
+        font-size: 12px;
+        color: #a1a1aa;
+        margin-top: 14px;
+        margin-bottom: 4px;
+      }
+      input[type='text'] {
+        width: 100%;
+        background: #09090b;
+        border: 1px solid #27272a;
+        color: #f4f4f5;
+        font: inherit;
+        padding: 8px 10px;
+        border-radius: 8px;
+        box-sizing: border-box;
+      }
+      input[type='text']:focus {
+        outline: none;
+        border-color: #52525b;
+      }
+      button {
+        margin-top: 16px;
+        background: #f4f4f5;
+        color: #18181b;
+        border: none;
+        padding: 8px 14px;
+        border-radius: 8px;
+        cursor: pointer;
+        font: inherit;
+      }
+      button:hover {
+        background: #e4e4e7;
+      }
+      .status {
+        margin-left: 10px;
+        font-size: 12px;
+        color: #a1a1aa;
+      }
+      .status.ok {
+        color: #34d399;
+      }
+      .status.error {
+        color: #f87171;
+      }
+      .help {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #71717a;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Video Vault 設定</h1>
+
+    <label for="api-base">Backend URL</label>
+    <input id="api-base" type="text" placeholder="http://127.0.0.1:3001" />
+    <p class="help">
+      backend が listening する URL。通常は <code>http://127.0.0.1:3001</code>
+      のままで OK。Tailscale 経由などでリモート公開しているなら HTTPS URL を入れる。
+    </p>
+
+    <button id="save">保存</button>
+    <button id="test" style="background: #27272a; color: #f4f4f5; margin-left: 8px;">接続テスト</button>
+    <span id="status" class="status"></span>
+
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

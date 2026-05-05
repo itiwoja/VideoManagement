@@ -13,7 +13,8 @@ video-vault/
 ├── frontend/        React 19 + Vite + Tailwind (port 5173)
 │   ├── components/  StarRating / VideoCard / EditVideoDialog / TagFilterBar / HistoryView
 │   └── lib/api.ts   型付き API クライアント
-└── bookmarklet/     ブックマークレットのソース
+├── extension/       Chrome 拡張 (推奨 - 右クリック/ショートカット保存)
+└── bookmarklet/     ブックマークレットのソース (extension が使えない時のフォールバック)
 ```
 
 データは `backend/data.db` (SQLite) に保存される。サムネは URL のみ DB に持つ。
@@ -43,7 +44,14 @@ npm run dev
 
 ブラウザで `http://localhost:5173` を開く。
 
-### 3. ブックマークレットを登録
+### 3. 動画を追加する経路（2 種類、どちらか好きな方を）
+
+#### 推奨: Chrome 拡張機能
+
+`extension/` を `chrome://extensions/` の「パッケージ化されていない拡張機能を読み込む」で読み込むと、
+右クリック / `Ctrl+Shift+V` / ツールバーアイコンから保存できる。詳細は [`extension/README.md`](extension/README.md)。
+
+#### フォールバック: ブックマークレット
 
 1. Chrome のブックマークバーで右クリック → 「ブックマークを追加」
 2. 名前: `Vaultに追加` (なんでもいい)
