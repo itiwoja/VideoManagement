@@ -82,4 +82,11 @@ export function migrate(db) {
     db.exec(sql);
     setUserVersion(db, 2);
   }
+
+  // ---- v3: phase 3 (password auth + API tokens) ----------------------------
+  if (current < 3) {
+    const sql = fs.readFileSync(path.join(dir, '003_auth.sql'), 'utf8');
+    db.exec(sql);
+    setUserVersion(db, 3);
+  }
 }

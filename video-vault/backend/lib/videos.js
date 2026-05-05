@@ -24,7 +24,8 @@
  * @property {string} [q]                 タイトル/サイトのあいまい検索
  * @property {'added_at'|'view_count'|'last_viewed_at'} [sort]
  * @property {string} [tag]               1 タグでフィルタ
- * @property {number} [ratingMin]         この評価以上に絞り込み
+ * @property {number} [ratingExact]       完全一致 (frontend デフォルト)
+ * @property {number} [ratingMin]         この評価以上に絞り込み (互換維持)
  * @property {boolean} [unratedOnly]      true なら rating IS NULL のみ
  */
 
@@ -79,6 +80,9 @@ export function findAll(db, filters = {}) {
 
   if (filters.unratedOnly) {
     conditions.push('v.rating IS NULL');
+  } else if (typeof filters.ratingExact === 'number') {
+    conditions.push('v.rating = ?');
+    params.push(filters.ratingExact);
   } else if (typeof filters.ratingMin === 'number') {
     conditions.push('v.rating >= ?');
     params.push(filters.ratingMin);
