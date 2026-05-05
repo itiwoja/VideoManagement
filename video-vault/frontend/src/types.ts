@@ -35,6 +35,9 @@ export interface VideoFilters {
   q?: string;
   sort?: SortKey;
   tag?: string;
+  /** 完全一致 (frontend デフォルト) */
+  ratingExact?: number;
+  /** これ以上 (任意・互換維持) */
   ratingMin?: number;
   unratedOnly?: boolean;
 }

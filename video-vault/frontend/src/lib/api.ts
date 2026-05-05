@@ -44,7 +44,9 @@ export async function fetchVideos(filters: VideoFilters = {}): Promise<Video[]> 
   if (filters.q) params.set('q', filters.q);
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.tag) params.set('tag', filters.tag);
-  if (typeof filters.ratingMin === 'number') {
+  if (typeof filters.ratingExact === 'number') {
+    params.set('rating', String(filters.ratingExact));
+  } else if (typeof filters.ratingMin === 'number') {
     params.set('rating_min', String(filters.ratingMin));
   }
   if (filters.unratedOnly) params.set('unrated', '1');

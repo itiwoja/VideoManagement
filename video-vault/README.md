@@ -125,13 +125,38 @@ npm test
 `test/videos.test.js` は実 DB に対する最小限のスモーク (health / videos / tags / history /
 PATCH バリデーションエラー)。CI 用には別途 in-memory DB を使う構成にする予定。
 
-## まだやってない (Phase 3 候補)
+## Phase 3 (実装済): 認証 + PWA + Share Target
 
-- パスワードロック (bcrypt + JWT) — localhost only なので低優先
+### 認証
+- 初回起動時に `/setup` 画面でパスワードを設定 (bcryptjs hash, cost 12)
+- ログインは HttpOnly Secure SameSite=Strict Cookie + JWT (14日)
+- ブルートフォース対策: ログイン失敗 5回/分 で 60秒ロック (in-memory token bucket)
+- パスワードは DB / log / response の生データに含まれない
+- API トークン (sha256 hash 保存) を `/api/auth/tokens` から発行 → ブックマークレットや拡張で使う
+
+### スマホ対応 (PWA + Web Share Target)
+1. Tailscale Funnel 経由の HTTPS URL (`https://...:8443/`) をスマホ Chrome / Safari で開く
+2. ブラウザメニュー → 「ホーム画面に追加」で **PWA としてインストール**
+3. YouTube / X / TikTok 等の動画ページで「**共有**」→ 「Video Vault」を選択 → 自動保存
+   - Android Chrome / Edge は Web Share Target API に対応
+   - iOS Safari は限定対応 (`/share?url=...` を直接開く形は動作)
+
+`public/manifest.webmanifest` の `share_target` で `/share` ルートに渡るパラメータを定義。
+フロントの `ShareTargetHandler` が url を取り出して POST する。
+
+### 環境変数 (backend/.env)
+- `JWT_SECRET` — 必須。最低 32 文字、`openssl rand -base64 64` などで生成
+- `BCRYPT_COST` — 任意、既定 12
+- `COOKIE_SECURE` — 本番 (HTTPS) では `true`
+- `HOST` / `PORT` — バインド設定
+
+## まだやってない (Phase 4 候補)
+
 - ローカルキャッシュ画像 (元サイト消失時の保険)
 - タグ階層 / カテゴリ軸 (今は単一フラット)
 - 一括編集 (複数選択 → タグ一括付与)
 - 動画再生プレビュー (今は元サイトに飛ぶだけ)
+- バックアップ / エクスポート (JSON ダンプ)
 
 ## メモ
 

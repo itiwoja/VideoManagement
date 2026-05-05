@@ -1,18 +1,22 @@
 import type { Tag } from '../types';
 
+export type RatingFilter = 'all' | 'unrated' | 1 | 2 | 3 | 4 | 5;
+
 interface TagFilterBarProps {
   tags: Tag[];
   activeTag: string | null;
   onTagChange: (tag: string | null) => void;
-  ratingFilter: 'all' | 'unrated' | 3 | 4 | 5;
-  onRatingChange: (next: 'all' | 'unrated' | 3 | 4 | 5) => void;
+  ratingFilter: RatingFilter;
+  onRatingChange: (next: RatingFilter) => void;
 }
 
-const RATING_BUTTONS: Array<{ key: 'all' | 'unrated' | 3 | 4 | 5; label: string }> = [
+const RATING_BUTTONS: ReadonlyArray<{ key: RatingFilter; label: string }> = [
   { key: 'all', label: 'すべて' },
   { key: 'unrated', label: '未評価' },
-  { key: 3, label: '★3+' },
-  { key: 4, label: '★4+' },
+  { key: 1, label: '★1' },
+  { key: 2, label: '★2' },
+  { key: 3, label: '★3' },
+  { key: 4, label: '★4' },
   { key: 5, label: '★5' },
 ];
 
@@ -68,13 +72,12 @@ export function TagFilterBar({
   );
 }
 
-function RatingButtons({
-  value,
-  onChange,
-}: {
-  value: 'all' | 'unrated' | 3 | 4 | 5;
-  onChange: (next: 'all' | 'unrated' | 3 | 4 | 5) => void;
-}) {
+interface RatingButtonsProps {
+  value: RatingFilter;
+  onChange: (next: RatingFilter) => void;
+}
+
+function RatingButtons({ value, onChange }: RatingButtonsProps) {
   return (
     <div className="flex flex-wrap gap-1 text-xs">
       {RATING_BUTTONS.map(({ key, label }) => {
