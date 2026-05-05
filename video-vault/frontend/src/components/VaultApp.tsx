@@ -3,6 +3,7 @@ import type { SortKey, Tag, Video } from '../types';
 import { deleteVideo, enrichMissingThumbnails, fetchTags, fetchVideos, recordView } from '../lib/api';
 import { logout } from '../lib/auth';
 import { VideoCard } from './VideoCard';
+import { AddVideoDialog } from './AddVideoDialog';
 import { EditVideoDialog } from './EditVideoDialog';
 import { TagFilterBar, type RatingFilter } from './TagFilterBar';
 import { HistoryView } from './HistoryView';
@@ -30,6 +31,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
   const [editing, setEditing] = useState<Video | null>(null);
   const [playing, setPlaying] = useState<Video | null>(null);
+  const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -108,6 +110,19 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
     setEditing(null);
   };
 
+  const handleAddClose = (created: Video | null) => {
+    setAdding(false);
+    if (created) {
+      // 既に同 URL があれば置き換え、無ければ先頭に追加
+      setVideos((prev) => {
+        const exists = prev.find((x) => x.id === created.id);
+        if (exists) return prev.map((x) => (x.id === created.id ? created : x));
+        return [created, ...prev];
+      });
+      void fetchTags().then(setAllTags).catch(() => {});
+    }
+  };
+
   const handleLogout = async () => {
     if (!confirm('ログアウトしますか？')) return;
     await logout();
@@ -160,6 +175,18 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
                 ))}
               </div>
             </>
+          )}
+
+          {tab === 'vault' && (
+            <button
+              type="button"
+              onClick={() => setAdding(true)}
+              className="px-3 py-1.5 rounded-md bg-zinc-100 text-zinc-900 text-sm font-medium
+                         hover:bg-zinc-300 transition-colors"
+              title="URL を貼り付けて動画を追加"
+            >
+              + 追加
+            </button>
           )}
 
           <button
@@ -224,6 +251,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
         <HistoryView />
       )}
 
+      {adding && <AddVideoDialog onClose={handleAddClose} />}
       {editing && <EditVideoDialog video={editing} onClose={handleEditClose} />}
       {playing && <VideoPlayer video={playing} onClose={() => setPlaying(null)} />}
     </div>

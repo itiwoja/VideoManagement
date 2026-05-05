@@ -66,6 +66,28 @@ export async function recordView(id: number): Promise<Video | null> {
   }
 }
 
+export interface CreateVideoResult {
+  video: Video;
+  created: boolean;
+  duplicate?: boolean;
+}
+
+/**
+ * URL を貼り付けて手動登録する。title/thumbnail はサーバ側で og:* から補完される。
+ */
+export async function createVideo(url: string, title?: string): Promise<CreateVideoResult> {
+  const res = await fetch('/api/videos', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, title }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`HTTP ${res.status}${text ? ` ${text}` : ''}`);
+  }
+  return (await res.json()) as CreateVideoResult;
+}
+
 export async function deleteVideo(id: number): Promise<boolean> {
   const res = await fetch(`/api/videos/${id}`, { method: 'DELETE' });
   return res.ok;
