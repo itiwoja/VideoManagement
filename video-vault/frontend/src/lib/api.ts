@@ -123,6 +123,44 @@ export async function fetchHistory(opts: {
   return unwrap(data).entries;
 }
 
+export interface ExtractedMedia {
+  url: string;
+  mediaType: string;
+  poster?: string;
+  title?: string;
+}
+
+/**
+ * 任意 URL から再生可能な動画 URL を抽出。失敗時は null。
+ */
+export async function extractMedia(pageUrl: string): Promise<ExtractedMedia | null> {
+  try {
+    const data = await jsonRequest<Api<ExtractedMedia>>(`/api/extract`, {
+      method: 'POST',
+      body: JSON.stringify({ url: pageUrl }),
+    });
+    return unwrap(data);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * NULL の thumbnail を持つ動画を server 側で og:image 補完。
+ * 1 リクエスト最大 20 件処理される。
+ */
+export async function enrichMissingThumbnails(): Promise<{ scanned: number; updated: number }> {
+  try {
+    const data = await jsonRequest<Api<{ scanned: number; updated: number }>>(
+      '/api/videos/enrich-thumbnails',
+      { method: 'POST' },
+    );
+    return unwrap(data);
+  } catch {
+    return { scanned: 0, updated: 0 };
+  }
+}
+
 export async function clearHistory(opts: { before?: string } = {}): Promise<number> {
   const params = new URLSearchParams();
   if (opts.before) params.set('before', opts.before);

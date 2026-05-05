@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SortKey, Tag, Video } from '../types';
-import { deleteVideo, fetchTags, fetchVideos, recordView } from '../lib/api';
+import { deleteVideo, enrichMissingThumbnails, fetchTags, fetchVideos, recordView } from '../lib/api';
 import { logout } from '../lib/auth';
 import { VideoCard } from './VideoCard';
 import { EditVideoDialog } from './EditVideoDialog';
@@ -65,6 +65,21 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, sort, activeTag, ratingFilter]);
+
+  // 起動時に thumbnail_url が NULL の動画を server 側で og:image 補完する。
+  // 補完できたら一覧をリロード。
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await enrichMissingThumbnails();
+      if (cancelled) return;
+      if (result.updated > 0) void load();
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const sites = useMemo(() => {
     const set = new Set(videos.map((v) => v.site));

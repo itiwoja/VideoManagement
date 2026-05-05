@@ -28,6 +28,7 @@ import {
 } from './lib/auth.js';
 import { requireAuth } from './lib/auth-mw.js';
 import { rateLimit } from './lib/rate-limit.js';
+import { extractMedia, extractMetadata } from './lib/extract.js';
 
 // ----------------------------------------------------- env validation (fail fast)
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -205,21 +206,84 @@ protectedRouter.get('/videos', (req, res) => {
   res.json({ videos: videosRepo.findAll(db, filters) });
 });
 
-protectedRouter.post('/videos', (req, res) => {
+protectedRouter.post('/videos', async (req, res) => {
   const { url, title, thumbnail_url, duration } = req.body || {};
-  if (!url || !title) {
-    return res.status(400).json({ error: 'url and title are required' });
+  if (!url) {
+    return res.status(400).json({ error: 'url is required' });
   }
   try {
     new URL(url);
   } catch {
     return res.status(400).json({ error: 'invalid url' });
   }
+
+  // PWA 共有経由 (Service Worker) や bookmarklet 経由では og:image / og:title が
+  // 取れていないことがある。ここで best-effort に補完する。失敗しても保存は続行。
+  let finalTitle = typeof title === 'string' && title.length > 0 ? title : null;
+  let finalThumb = typeof thumbnail_url === 'string' && thumbnail_url.length > 0 ? thumbnail_url : null;
+
+  if (!finalTitle || !finalThumb) {
+    try {
+      const meta = await extractMetadata(url);
+      if (!finalTitle && meta.title) finalTitle = meta.title;
+      if (!finalThumb && meta.thumbnail) finalThumb = meta.thumbnail;
+    } catch {
+      // ignore - best effort
+    }
+  }
+
+  // それでも title が無ければ URL を fallback に
+  if (!finalTitle) finalTitle = url;
+
   try {
-    const result = videosRepo.create(db, { url, title, thumbnail_url, duration });
+    const result = videosRepo.create(db, {
+      url,
+      title: finalTitle,
+      thumbnail_url: finalThumb,
+      duration,
+    });
     res.json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// 既存動画のサムネ補完 (NULL の動画について og:image を取得して埋める)。
+// 一気にやるとサイトに負荷がかかるので 1 リクエスト最大 20 件。
+protectedRouter.post('/videos/enrich-thumbnails', async (_req, res) => {
+  const targets = videosRepo.findMissingThumbnails(db, 20);
+  let updated = 0;
+  for (const t of targets) {
+    try {
+      const meta = await extractMetadata(t.url);
+      if (meta.thumbnail) {
+        const v = videosRepo.setThumbnail(db, t.id, meta.thumbnail);
+        if (v) updated += 1;
+      }
+    } catch {
+      // skip individual failures
+    }
+  }
+  return successResponse(res, { scanned: targets.length, updated });
+});
+
+// 任意 URL から再生可能な動画 URL を抽出する (アプリ内プレイヤー用)。
+protectedRouter.post('/extract', async (req, res) => {
+  const { url } = req.body || {};
+  if (typeof url !== 'string' || url.length === 0) {
+    return errorResponse(res, 400, 'url required');
+  }
+  try {
+    new URL(url);
+  } catch {
+    return errorResponse(res, 400, 'invalid url');
+  }
+  try {
+    const media = await extractMedia(url);
+    if (!media) return errorResponse(res, 404, 'no playable media found');
+    return successResponse(res, media);
+  } catch (err) {
+    return errorResponse(res, 500, err instanceof Error ? err.message : 'extract failed');
   }
 });
 

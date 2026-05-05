@@ -172,6 +172,35 @@ export function update(db, id, patch) {
 }
 
 /**
+ * thumbnail_url のみを後追いで更新するための専用ヘルパー。
+ * og:image を後からサーバ側で取得した時に使う。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} id
+ * @param {string} thumbnailUrl
+ * @returns {Video|null}
+ */
+export function setThumbnail(db, id, thumbnailUrl) {
+  const result = db
+    .prepare('UPDATE videos SET thumbnail_url = ? WHERE id = ? AND thumbnail_url IS NULL')
+    .run(thumbnailUrl, id);
+  if (result.changes === 0) return null;
+  return findById(db, id);
+}
+
+/**
+ * thumbnail_url が NULL の動画 ID 一覧。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} [limit]
+ * @returns {{ id: number, url: string }[]}
+ */
+export function findMissingThumbnails(db, limit = 50) {
+  const rows = db
+    .prepare('SELECT id, url FROM videos WHERE thumbnail_url IS NULL LIMIT ?')
+    .all(limit);
+  return rows.map((r) => ({ id: Number(r.id), url: String(r.url) }));
+}
+
+/**
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {number} id
  * @returns {{ video: Video|null, viewed: boolean }}
