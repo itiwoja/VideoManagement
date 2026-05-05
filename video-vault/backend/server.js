@@ -1,140 +1,175 @@
+// server.js
+// Express HTTP layer. ビジネスロジックは lib/* に分離。
 // Requires Node.js 22.5+ for built-in node:sqlite.
-// Run with:  node --no-warnings server.js   (to suppress experimental warning)
+
 import express from 'express';
 import cors from 'cors';
-import { DatabaseSync } from 'node:sqlite';
-import { fileURLToPath } from 'url';
-import path from 'path';
+import { openDb, migrate } from './lib/db.js';
+import * as videosRepo from './lib/videos.js';
+import * as tagsRepo from './lib/tags.js';
+import * as historyRepo from './lib/history.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new DatabaseSync(path.join(__dirname, 'data.db'));
+const db = openDb();
+migrate(db);
 
-// --- Schema -----------------------------------------------------------------
-db.exec(`
-  CREATE TABLE IF NOT EXISTS videos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    url TEXT NOT NULL UNIQUE,
-    site TEXT NOT NULL,
-    title TEXT NOT NULL,
-    thumbnail_url TEXT,
-    duration TEXT,
-    added_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    view_count INTEGER DEFAULT 0,
-    last_viewed_at TEXT
-  );
-  CREATE INDEX IF NOT EXISTS idx_videos_added_at ON videos(added_at DESC);
-  CREATE INDEX IF NOT EXISTS idx_videos_site ON videos(site);
-`);
-
-// --- App --------------------------------------------------------------------
 const app = express();
 
-// Allow all origins. This server should only ever bind to localhost.
+// Allow all origins. This server only ever binds to localhost (127.0.0.1).
 app.use(cors());
 app.use(express.json({ limit: '1mb' }));
 
-// Health check
+// ------------------------------------------------------------------ helpers
+const errorResponse = (res, status, message) =>
+  res.status(status).json({ ok: false, error: message });
+const successResponse = (res, data) => res.json({ ok: true, data });
+
+const parseId = (raw) => {
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+
+// ------------------------------------------------------------------ health
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });
 });
 
-// List / search videos
+// ------------------------------------------------------------------ videos
 app.get('/api/videos', (req, res) => {
   const q = (req.query.q || '').toString().trim();
   const sort = (req.query.sort || 'added_at').toString();
+  const tag = (req.query.tag || '').toString().trim();
+  const ratingMinRaw = req.query.rating_min;
+  const ratingMin =
+    ratingMinRaw !== undefined && ratingMinRaw !== '' ? Number(ratingMinRaw) : undefined;
+  const unratedOnly = req.query.unrated === '1';
 
-  const sortColumn =
-    sort === 'view_count'
-      ? 'view_count'
-      : sort === 'last_viewed_at'
-      ? 'last_viewed_at'
-      : 'added_at';
+  const filters = {
+    q: q || undefined,
+    sort,
+    tag: tag || undefined,
+    ratingMin: Number.isFinite(ratingMin) ? ratingMin : undefined,
+    unratedOnly,
+  };
 
-  let rows;
-  if (q) {
-    const like = `%${q}%`;
-    rows = db
-      .prepare(
-        `SELECT * FROM videos
-         WHERE title LIKE ? OR site LIKE ?
-         ORDER BY ${sortColumn} IS NULL, ${sortColumn} DESC`
-      )
-      .all(like, like);
-  } else {
-    rows = db
-      .prepare(
-        `SELECT * FROM videos
-         ORDER BY ${sortColumn} IS NULL, ${sortColumn} DESC`
-      )
-      .all();
-  }
-
-  res.json({ videos: rows });
+  const videos = videosRepo.findAll(db, filters);
+  res.json({ videos });
 });
 
-// Add a video (used by bookmarklet)
 app.post('/api/videos', (req, res) => {
   const { url, title, thumbnail_url, duration } = req.body || {};
-
   if (!url || !title) {
     return res.status(400).json({ error: 'url and title are required' });
   }
-
-  let site;
   try {
-    site = new URL(url).hostname.replace(/^www\./, '');
+    new URL(url);
   } catch {
     return res.status(400).json({ error: 'invalid url' });
   }
 
   try {
-    const stmt = db.prepare(
-      `INSERT INTO videos (url, site, title, thumbnail_url, duration)
-       VALUES (?, ?, ?, ?, ?)`
-    );
-    const result = stmt.run(url, site, title, thumbnail_url || null, duration || null);
-    const video = db.prepare('SELECT * FROM videos WHERE id = ?').get(result.lastInsertRowid);
-    res.json({ video, created: true });
+    const result = videosRepo.create(db, { url, title, thumbnail_url, duration });
+    res.json(result);
   } catch (err) {
-    if (String(err.message).includes('UNIQUE')) {
-      const existing = db.prepare('SELECT * FROM videos WHERE url = ?').get(url);
-      return res.json({ video: existing, created: false, duplicate: true });
-    }
     res.status(500).json({ error: err.message });
   }
 });
 
-// Increment view count
-app.post('/api/videos/:id/view', (req, res) => {
-  const id = Number(req.params.id);
-  const result = db
-    .prepare(
-      `UPDATE videos
-       SET view_count = view_count + 1,
-           last_viewed_at = CURRENT_TIMESTAMP
-       WHERE id = ?`
-    )
-    .run(id);
+app.patch('/api/videos/:id', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
 
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'not found' });
+  const { title, rating, note } = req.body || {};
+  const patch = {};
+  if (typeof title === 'string') patch.title = title;
+  if (rating === null) patch.rating = null;
+  else if (typeof rating === 'number') {
+    if (!Number.isInteger(rating) || rating < 0 || rating > 5) {
+      return errorResponse(res, 400, 'rating must be 0..5 or null');
+    }
+    patch.rating = rating;
   }
-  const video = db.prepare('SELECT * FROM videos WHERE id = ?').get(id);
-  res.json({ video });
+  if (note === null || typeof note === 'string') patch.note = note;
+
+  const video = videosRepo.update(db, id, patch);
+  if (!video) return errorResponse(res, 404, 'not found');
+  return successResponse(res, { video });
 });
 
-// Delete a video
+app.post('/api/videos/:id/view', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'invalid id' });
+
+  const result = videosRepo.recordView(db, id);
+  if (!result.viewed) return res.status(404).json({ error: 'not found' });
+  res.json({ video: result.video });
+});
+
 app.delete('/api/videos/:id', (req, res) => {
-  const id = Number(req.params.id);
-  const result = db.prepare('DELETE FROM videos WHERE id = ?').run(id);
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'not found' });
-  }
+  const id = parseId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'invalid id' });
+  const ok = videosRepo.remove(db, id);
+  if (!ok) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
 });
 
-// --- Start ------------------------------------------------------------------
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`video-vault backend listening on http://127.0.0.1:${PORT}`);
+// ------------------------------------------------------------------ tags
+app.get('/api/tags', (_req, res) => {
+  const tags = tagsRepo.findAll(db);
+  return successResponse(res, { tags });
 });
+
+app.post('/api/videos/:id/tags', (req, res) => {
+  const videoId = parseId(req.params.id);
+  if (videoId === null) return errorResponse(res, 400, 'invalid id');
+
+  const { name } = req.body || {};
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return errorResponse(res, 400, 'name is required');
+  }
+  if (!videosRepo.findById(db, videoId)) {
+    return errorResponse(res, 404, 'video not found');
+  }
+
+  try {
+    const tag = tagsRepo.attachToVideo(db, videoId, name);
+    return successResponse(res, { tag });
+  } catch (err) {
+    return errorResponse(res, 400, err.message);
+  }
+});
+
+app.delete('/api/videos/:videoId/tags/:tagId', (req, res) => {
+  const videoId = parseId(req.params.videoId);
+  const tagId = parseId(req.params.tagId);
+  if (videoId === null || tagId === null) {
+    return errorResponse(res, 400, 'invalid id');
+  }
+  const ok = tagsRepo.detachFromVideo(db, videoId, tagId);
+  if (!ok) return errorResponse(res, 404, 'not attached');
+  return successResponse(res, { detached: true });
+});
+
+// ------------------------------------------------------------------ history
+app.get('/api/history', (req, res) => {
+  const limit = req.query.limit ? Number(req.query.limit) : undefined;
+  const sinceDays = req.query.since_days ? Number(req.query.since_days) : undefined;
+  const entries = historyRepo.findRecent(db, {
+    limit: Number.isFinite(limit) ? limit : undefined,
+    sinceDays: Number.isFinite(sinceDays) ? sinceDays : undefined,
+  });
+  return successResponse(res, { entries });
+});
+
+app.delete('/api/history', (req, res) => {
+  const before = req.query.before ? String(req.query.before) : undefined;
+  const result = historyRepo.clear(db, { before });
+  return successResponse(res, result);
+});
+
+// ------------------------------------------------------------------ start
+const PORT = Number(process.env.PORT || 3001);
+app.listen(PORT, '127.0.0.1', () => {
+  process.stdout.write(`video-vault backend listening on http://127.0.0.1:${PORT}\n`);
+});
+
+export { app, db };

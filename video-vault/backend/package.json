@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "start": "node --no-warnings server.js",
-    "dev": "node --no-warnings --watch server.js"
+    "dev": "node --no-warnings --watch server.js",
+    "test": "node --no-warnings --test test/"
   },
   "dependencies": {
     "cors": "^2.8.5",
