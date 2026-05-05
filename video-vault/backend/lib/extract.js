@@ -16,10 +16,16 @@
 //
 // User-Agent はデスクトップ Chrome を装う (一部 site が UA で出し分けるため)。
 
+import { spawn } from 'node:child_process';
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 const FETCH_TIMEOUT_MS = 12_000;
+
+// yt-dlp の場所 (Windows 専用、env で上書き可)
+const YT_DLP_PATH = process.env.YT_DLP_PATH || 'C:\\Users\\1kkim\\projects\\yt-dlp.exe';
+const YT_DLP_TIMEOUT_MS = 20_000;
 
 /**
  * @typedef {Object} ExtractedMedia
@@ -45,21 +51,38 @@ const FETCH_TIMEOUT_MS = 12_000;
  */
 export async function extractMetadata(pageUrl) {
   const html = await fetchHtml(pageUrl);
-  if (!html) return {};
-  const meta = readMeta(html);
   /** @type {PageMetadata} */
   const out = {};
-  const title = meta['og:title'] || meta['twitter:title'] || extractTitleTag(html);
-  if (title) out.title = title;
-  const thumb = meta['og:image:secure_url'] || meta['og:image'] || meta['twitter:image'];
-  if (thumb) {
-    try {
-      out.thumbnail = new URL(thumb, pageUrl).toString();
-    } catch {
-      out.thumbnail = thumb;
+
+  if (html) {
+    const meta = readMeta(html);
+    const title = meta['og:title'] || meta['twitter:title'] || extractTitleTag(html);
+    if (title) out.title = title;
+    const thumb = meta['og:image:secure_url'] || meta['og:image'] || meta['twitter:image'];
+    if (thumb) {
+      try {
+        out.thumbnail = new URL(thumb, pageUrl).toString();
+      } catch {
+        out.thumbnail = thumb;
+      }
     }
+    if (meta['og:site_name']) out.siteName = meta['og:site_name'];
   }
-  if (meta['og:site_name']) out.siteName = meta['og:site_name'];
+
+  // og で title / thumbnail が両方取れたなら、それを返す
+  if (out.title && out.thumbnail) return out;
+
+  // 取れなかったら yt-dlp で補完を試みる (spankbang 等の bot ブロックサイト用)
+  try {
+    const ytdlp = await extractWithYtDlp(pageUrl);
+    if (ytdlp) {
+      if (!out.title && ytdlp.title) out.title = ytdlp.title;
+      if (!out.thumbnail && ytdlp.poster) out.thumbnail = ytdlp.poster;
+    }
+  } catch {
+    // 失敗時はそのまま (best effort)
+  }
+
   return out;
 }
 
@@ -78,60 +101,193 @@ function extractTitleTag(html) {
  */
 export async function extractMedia(pageUrl) {
   const html = await fetchHtml(pageUrl);
-  if (!html) return null;
 
-  const meta = readMeta(html);
+  // HTML 取得できたら og:video / JSON-LD / <video src> / 直リンクを試す
+  // (取れなかったら yt-dlp フォールバックへ)
+  if (html) {
+    const meta = readMeta(html);
 
-  // 1. og:video 系
-  const og =
-    meta['og:video:secure_url'] ||
-    meta['og:video:url'] ||
-    meta['og:video'] ||
-    meta['twitter:player:stream'] ||
-    null;
-  if (og && isPlayableUrl(og)) {
-    return {
-      url: absolute(pageUrl, og),
-      mediaType: detectMediaType(og),
-      poster: meta['og:image'] || undefined,
-      title: meta['og:title'] || undefined,
-    };
+    // 1. og:video 系
+    const og =
+      meta['og:video:secure_url'] ||
+      meta['og:video:url'] ||
+      meta['og:video'] ||
+      meta['twitter:player:stream'] ||
+      null;
+    if (og && isPlayableUrl(og)) {
+      return {
+        url: absolute(pageUrl, og),
+        mediaType: detectMediaType(og),
+        poster: meta['og:image'] || undefined,
+        title: meta['og:title'] || undefined,
+      };
+    }
+
+    // 2. JSON-LD VideoObject
+    const jsonLd = findJsonLdVideo(html);
+    if (jsonLd) {
+      return {
+        url: absolute(pageUrl, jsonLd.url),
+        mediaType: detectMediaType(jsonLd.url),
+        poster: jsonLd.poster || meta['og:image'] || undefined,
+        title: jsonLd.title || meta['og:title'] || undefined,
+      };
+    }
+
+    // 3. <video src> / <source src>
+    const videoTag = findVideoTagSrc(html);
+    if (videoTag) {
+      return {
+        url: absolute(pageUrl, videoTag),
+        mediaType: detectMediaType(videoTag),
+        poster: meta['og:image'] || undefined,
+        title: meta['og:title'] || undefined,
+      };
+    }
+
+    // 4. direct .mp4 / .m3u8 / .webm
+    const direct = findDirectMedia(html);
+    if (direct) {
+      return {
+        url: absolute(pageUrl, direct),
+        mediaType: detectMediaType(direct),
+        poster: meta['og:image'] || undefined,
+        title: meta['og:title'] || undefined,
+      };
+    }
   }
 
-  // 2. JSON-LD VideoObject
-  const jsonLd = findJsonLdVideo(html);
-  if (jsonLd) {
-    return {
-      url: absolute(pageUrl, jsonLd.url),
-      mediaType: detectMediaType(jsonLd.url),
-      poster: jsonLd.poster || meta['og:image'] || undefined,
-      title: jsonLd.title || meta['og:title'] || undefined,
-    };
-  }
-
-  // 3. <video src> / <source src>
-  const videoTag = findVideoTagSrc(html);
-  if (videoTag) {
-    return {
-      url: absolute(pageUrl, videoTag),
-      mediaType: detectMediaType(videoTag),
-      poster: meta['og:image'] || undefined,
-      title: meta['og:title'] || undefined,
-    };
-  }
-
-  // 4. direct .mp4 / .m3u8 / .webm
-  const direct = findDirectMedia(html);
-  if (direct) {
-    return {
-      url: absolute(pageUrl, direct),
-      mediaType: detectMediaType(direct),
-      poster: meta['og:image'] || undefined,
-      title: meta['og:title'] || undefined,
-    };
+  // 5. yt-dlp フォールバック (HTML 取得失敗時 + 上の戦略全部失敗時)
+  // spankbang / missav / tktube / javrank などの bot ブロック・JS 動的サイトで効く
+  try {
+    const ytdlp = await extractWithYtDlp(pageUrl);
+    if (ytdlp) return ytdlp;
+  } catch {
+    // yt-dlp が無いか、タイムアウトした場合は無視
   }
 
   return null;
+}
+
+/**
+ * yt-dlp.exe を child_process で起動し、JSON 出力から動画 URL を取り出す。
+ * 1000+ サイトに対応 (YouTube、TikTok、各種 tube サイト等)。
+ * @param {string} pageUrl
+ * @returns {Promise<ExtractedMedia|null>}
+ */
+async function extractWithYtDlp(pageUrl) {
+  /** @type {Promise<{stdout: string, stderr: string, code: number}>} */
+  const result = await new Promise((resolve, reject) => {
+    const child = spawn(
+      YT_DLP_PATH,
+      ['-j', '--no-warnings', '--no-playlist', '--socket-timeout', '15', pageUrl],
+      { windowsHide: true },
+    );
+
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('yt-dlp timeout'));
+    }, YT_DLP_TIMEOUT_MS);
+
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ stdout, stderr, code: code ?? -1 });
+    });
+  });
+
+  if (result.code !== 0 || !result.stdout) return null;
+
+  /** @type {Record<string, unknown>} */
+  let data;
+  try {
+    data = JSON.parse(result.stdout);
+  } catch {
+    return null;
+  }
+
+  // 一番再生しやすい URL を選ぶ
+  // 戦略:
+  //   1. 直接 mp4 (https) で 720p 以下を優先 (帯域重視、スマホで再生しやすい)
+  //   2. 720p mp4 が無ければ最低画質 mp4
+  //   3. mp4 が無ければ HLS m3u8
+  //   4. それも無ければトップレベルの url
+  const formats = Array.isArray(data.formats) ? data.formats : [];
+
+  /** @type {{ url: string, ext: string, height?: number, protocol?: string }[]} */
+  const candidates = [];
+  for (const f of formats) {
+    if (!f || typeof f !== 'object') continue;
+    const url = typeof f.url === 'string' ? f.url : null;
+    if (!url || !url.startsWith('http')) continue;
+    candidates.push({
+      url,
+      ext: typeof f.ext === 'string' ? f.ext : '',
+      height: typeof f.height === 'number' ? f.height : undefined,
+      protocol: typeof f.protocol === 'string' ? f.protocol : undefined,
+    });
+  }
+
+  // mp4 (https protocol)、height ≦ 720 を優先
+  const mp4Candidates = candidates
+    .filter((c) => c.ext === 'mp4' && c.protocol !== 'm3u8_native' && c.protocol !== 'm3u8')
+    .sort((a, b) => {
+      // 720p に近いものを優先 (高すぎても低すぎても遠ざける)
+      const ah = a.height ?? 1080;
+      const bh = b.height ?? 1080;
+      const aDist = Math.abs(ah - 720);
+      const bDist = Math.abs(bh - 720);
+      return aDist - bDist;
+    });
+
+  let chosen = mp4Candidates[0];
+
+  // mp4 が取れなかったら HLS
+  if (!chosen) {
+    const hlsCandidates = candidates
+      .filter((c) => c.protocol === 'm3u8_native' || c.protocol === 'm3u8')
+      .sort((a, b) => (b.height ?? 0) - (a.height ?? 0));
+    chosen = hlsCandidates[0];
+  }
+
+  // それも無ければトップレベル URL
+  if (!chosen) {
+    const topUrl = typeof data.url === 'string' ? data.url : null;
+    if (!topUrl) return null;
+    chosen = { url: topUrl, ext: 'mp4', protocol: 'https' };
+  }
+
+  const isHls = chosen.protocol?.startsWith('m3u8') ?? false;
+  const mediaType = isHls
+    ? 'application/x-mpegURL'
+    : chosen.ext === 'webm'
+      ? 'video/webm'
+      : 'video/mp4';
+
+  /** @type {ExtractedMedia} */
+  const out = {
+    url: chosen.url,
+    mediaType,
+  };
+  if (typeof data.title === 'string') out.title = data.title;
+  // thumbnail は文字列 or thumbnails 配列の最初
+  if (typeof data.thumbnail === 'string') {
+    out.poster = data.thumbnail;
+  } else if (Array.isArray(data.thumbnails) && data.thumbnails[0]?.url) {
+    out.poster = String(data.thumbnails[0].url);
+  }
+  return out;
 }
 
 /**
