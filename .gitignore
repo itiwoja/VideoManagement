@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+.vite/
+.next/
+build/
+
+# Local data (backend)
+data.db
+data.db-journal
+data.db-wal
+data.db-shm
+*.sqlite
+*.sqlite-journal
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Lockfiles: 採用は1個に統一する
+# 今は pnpm-lock.yaml を採用しているので package-lock.json は無視
+package-lock.json
+yarn.lock
