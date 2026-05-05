@@ -6,6 +6,7 @@ import { VideoCard } from './VideoCard';
 import { EditVideoDialog } from './EditVideoDialog';
 import { TagFilterBar, type RatingFilter } from './TagFilterBar';
 import { HistoryView } from './HistoryView';
+import { VideoPlayer } from './VideoPlayer';
 
 const SORT_LABEL: Record<SortKey, string> = {
   added_at: '追加日',
@@ -28,6 +29,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
   const [editing, setEditing] = useState<Video | null>(null);
+  const [playing, setPlaying] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
@@ -70,7 +72,9 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
   }, [videos]);
 
   const handleOpen = async (v: Video) => {
-    window.open(v.url, '_blank', 'noopener,noreferrer');
+    // アプリ内プレイヤーで再生 (対応サイトは iframe 埋め込み、未対応は元サイトボタン)
+    setPlaying(v);
+    // 視聴回数 +1 + 履歴記録
     const updated = await recordView(v.id);
     if (updated) setVideos((prev) => prev.map((x) => (x.id === v.id ? updated : x)));
   };
@@ -206,6 +210,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
       )}
 
       {editing && <EditVideoDialog video={editing} onClose={handleEditClose} />}
+      {playing && <VideoPlayer video={playing} onClose={() => setPlaying(null)} />}
     </div>
   );
 }

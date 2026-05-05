@@ -40,7 +40,7 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
       <button
         onClick={onOpen}
         className="block w-full text-left"
-        title="クリックで新規タブで開く（視聴回数 +1）"
+        title="クリックでアプリ内プレイヤーを開く（視聴回数 +1）"
       >
         <div className="relative aspect-video bg-zinc-800">
           {video.thumbnail_url ? (
