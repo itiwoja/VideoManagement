@@ -27,7 +27,8 @@
         margin-top: 14px;
         margin-bottom: 4px;
       }
-      input[type='text'] {
+      input[type='text'],
+      input[type='password'] {
         width: 100%;
         background: #09090b;
         border: 1px solid #27272a;
@@ -37,7 +38,8 @@
         border-radius: 8px;
         box-sizing: border-box;
       }
-      input[type='text']:focus {
+      input[type='text']:focus,
+      input[type='password']:focus {
         outline: none;
         border-color: #52525b;
       }
@@ -71,6 +73,11 @@
         color: #71717a;
         line-height: 1.4;
       }
+      hr {
+        border: none;
+        border-top: 1px solid #27272a;
+        margin: 24px 0;
+      }
     </style>
   </head>
   <body>
@@ -79,8 +86,18 @@
     <label for="api-base">Backend URL</label>
     <input id="api-base" type="text" placeholder="http://127.0.0.1:3001" />
     <p class="help">
-      backend が listening する URL。通常は <code>http://127.0.0.1:3001</code>
-      のままで OK。Tailscale 経由などでリモート公開しているなら HTTPS URL を入れる。
+      backend が listening する URL。ローカル運用なら <code>http://127.0.0.1:3001</code>。
+      Tailscale Funnel 経由でリモート利用するなら例:
+      <code>https://desktop-qjb6vf1.tail3338a4.ts.net:8443</code>。
+    </p>
+
+    <hr />
+
+    <label for="api-token">API トークン (パスワード認証導入後は必須)</label>
+    <input id="api-token" type="password" placeholder="vault_..." />
+    <p class="help">
+      Vault フロントの「設定」→「API トークン」で発行した値。Authorization ヘッダで送信する。
+      backend がパスワード保護されている場合のみ必要。トークンはこの設定 (chrome.storage.sync) にだけ保存される。
     </p>
 
     <button id="save">保存</button>

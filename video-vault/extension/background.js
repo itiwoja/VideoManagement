@@ -9,9 +9,15 @@
 
 const DEFAULT_API = 'http://127.0.0.1:3001';
 
-async function getApiBase() {
-  const stored = await chrome.storage.sync.get({ apiBase: DEFAULT_API });
-  return (stored.apiBase || DEFAULT_API).replace(/\/$/, '');
+async function getConfig() {
+  const stored = await chrome.storage.sync.get({
+    apiBase: DEFAULT_API,
+    apiToken: '',
+  });
+  return {
+    apiBase: (stored.apiBase || DEFAULT_API).replace(/\/$/, ''),
+    apiToken: (stored.apiToken || '').trim(),
+  };
 }
 
 /**
@@ -99,12 +105,17 @@ function hostnameFallbackTitle(url) {
  * @param {VideoPayload} payload
  */
 async function saveToVault(payload) {
-  const base = await getApiBase();
-  const res = await fetch(`${base}/api/videos`, {
+  const { apiBase, apiToken } = await getConfig();
+  const headers = { 'Content-Type': 'application/json' };
+  if (apiToken) headers['Authorization'] = `Bearer ${apiToken}`;
+  const res = await fetch(`${apiBase}/api/videos`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
+  if (res.status === 401) {
+    throw new Error('認証失敗 — 設定で API トークンを確認してください');
+  }
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
   }
