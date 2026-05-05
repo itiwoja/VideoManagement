@@ -55,7 +55,10 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
     }
     setState({ loading: true, error: null });
     try {
-      const result = await createVideo(trimmed, title.trim() || undefined);
+      // title 未入力時は URL を仮タイトルとして送る (server 側の og:title 取得が
+      // 失敗しても登録できるようにするため。og:title が拾えればその時点で上書きされる)
+      const fallbackTitle = title.trim() || trimmed;
+      const result = await createVideo(trimmed, fallbackTitle);
       onClose(result.video);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'unknown error';
