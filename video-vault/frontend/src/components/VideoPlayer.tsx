@@ -148,13 +148,28 @@ function UnsupportedBlock({ video, onClose }: { video: Video; onClose: () => voi
       return;
     }
 
-    // hls.js を CDN から動的 import
+    // hls.js を CDN から動的 import (TS が URL import を解決できないので
+    // window.eval('import(...)') 経由で実行時に読み込む)
     let cancelled = false;
+    interface HlsLike {
+      loadSource: (s: string) => void;
+      attachMedia: (e: HTMLVideoElement) => void;
+      destroy: () => void;
+    }
+    interface HlsCtor {
+      new (): HlsLike;
+    }
     (async () => {
       try {
-        const mod = await import(/* @vite-ignore */ 'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.mjs');
+        const dynImport = new Function(
+          'u',
+          'return import(u)',
+        ) as (u: string) => Promise<{ default: HlsCtor }>;
+        const mod = await dynImport(
+          'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.mjs',
+        );
         if (cancelled) return;
-        const Hls = (mod as { default: new () => { loadSource: (s: string) => void; attachMedia: (e: HTMLVideoElement) => void; destroy: () => void } }).default;
+        const Hls = mod.default;
         const hls = new Hls();
         hls.loadSource(state.media.url);
         hls.attachMedia(el);
