@@ -29,6 +29,7 @@ import {
 import { requireAuth } from './lib/auth-mw.js';
 import { rateLimit } from './lib/rate-limit.js';
 import { extractMedia, extractMetadata } from './lib/extract.js';
+import { saveProxyEntry, getProxyEntry } from './lib/proxy-store.js';
 
 // ----------------------------------------------------- env validation (fail fast)
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -268,6 +269,7 @@ protectedRouter.post('/videos/enrich-thumbnails', async (_req, res) => {
 });
 
 // 任意 URL から再生可能な動画 URL を抽出する (アプリ内プレイヤー用)。
+// upstream で Cookie / Referer 等が必要な場合は、proxy URL に変換して返す。
 protectedRouter.post('/extract', async (req, res) => {
   const { url } = req.body || {};
   if (typeof url !== 'string' || url.length === 0) {
@@ -281,9 +283,91 @@ protectedRouter.post('/extract', async (req, res) => {
   try {
     const media = await extractMedia(url);
     if (!media) return errorResponse(res, 404, 'no playable media found');
+
+    // ヘッダが必要なら proxy URL に変換 (yt-dlp 経路は大抵必要)
+    if (media.httpHeaders && Object.keys(media.httpHeaders).length > 0) {
+      const token = saveProxyEntry({
+        url: media.url,
+        headers: media.httpHeaders,
+        mediaType: media.mediaType,
+      });
+      return successResponse(res, {
+        ...media,
+        url: `/api/stream/${token}`,
+        httpHeaders: undefined, // クライアントには返さない
+        referrer: undefined,
+        proxied: true,
+      });
+    }
+
+    // ヘッダ不要 (og:video 直リンク・YouTube embed 等) はそのまま
     return successResponse(res, media);
   } catch (err) {
     return errorResponse(res, 500, err instanceof Error ? err.message : 'extract failed');
+  }
+});
+
+// 認証付き proxy: 抽出した動画 URL を upstream の正しいヘッダで fetch して stream する。
+// `<video src="/api/stream/<token>">` で再生されることを想定。
+// Range リクエストにも対応 (動画のシーク用)。
+protectedRouter.get('/stream/:token', async (req, res) => {
+  const entry = getProxyEntry(req.params.token);
+  if (!entry) return errorResponse(res, 404, 'token not found or expired');
+
+  // Range は upstream にそのまま転送 (シーク・部分再生のため)
+  const upstreamHeaders = { ...entry.headers };
+  if (req.headers.range) {
+    upstreamHeaders['Range'] = String(req.headers.range);
+  }
+
+  try {
+    const upstream = await fetch(entry.url, {
+      method: 'GET',
+      headers: upstreamHeaders,
+      redirect: 'follow',
+    });
+
+    res.status(upstream.status);
+    // 通すべきレスポンスヘッダ
+    const passthroughHeaders = [
+      'content-type',
+      'content-length',
+      'content-range',
+      'accept-ranges',
+      'cache-control',
+      'last-modified',
+      'etag',
+    ];
+    for (const h of passthroughHeaders) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+    // Content-Type は entry.mediaType を優先 (upstream が誤った type を返すケースあり)
+    if (entry.mediaType && !upstream.headers.get('content-type')?.startsWith('video')) {
+      res.setHeader('Content-Type', entry.mediaType);
+    }
+
+    if (!upstream.body) {
+      res.end();
+      return;
+    }
+
+    // ReadableStream を Node の res に流す
+    const reader = upstream.body.getReader();
+    res.on('close', () => {
+      reader.cancel().catch(() => {});
+    });
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) res.write(value);
+    }
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) {
+      return errorResponse(res, 502, `upstream error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    res.end();
   }
 });
 

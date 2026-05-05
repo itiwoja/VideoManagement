@@ -33,6 +33,8 @@ const YT_DLP_TIMEOUT_MS = 20_000;
  * @property {string} mediaType      'video/mp4' | 'application/x-mpegURL' | etc
  * @property {string} [poster]       og:image など
  * @property {string} [title]
+ * @property {Record<string, string>} [httpHeaders]  upstream に送る必要がある headers (UA, Cookie, Referer 等)
+ * @property {string} [referrer]     必要なら referer URL (ページ URL)
  */
 
 /**
@@ -225,7 +227,7 @@ async function extractWithYtDlp(pageUrl) {
   //   4. それも無ければトップレベルの url
   const formats = Array.isArray(data.formats) ? data.formats : [];
 
-  /** @type {{ url: string, ext: string, height?: number, protocol?: string }[]} */
+  /** @type {{ url: string, ext: string, height?: number, protocol?: string, http_headers?: Record<string, string>, cookies?: string }[]} */
   const candidates = [];
   for (const f of formats) {
     if (!f || typeof f !== 'object') continue;
@@ -236,6 +238,10 @@ async function extractWithYtDlp(pageUrl) {
       ext: typeof f.ext === 'string' ? f.ext : '',
       height: typeof f.height === 'number' ? f.height : undefined,
       protocol: typeof f.protocol === 'string' ? f.protocol : undefined,
+      http_headers: f.http_headers && typeof f.http_headers === 'object'
+        ? /** @type {Record<string, string>} */ (f.http_headers)
+        : undefined,
+      cookies: typeof f.cookies === 'string' ? f.cookies : undefined,
     });
   }
 
@@ -286,6 +292,34 @@ async function extractWithYtDlp(pageUrl) {
     out.poster = data.thumbnail;
   } else if (Array.isArray(data.thumbnails) && data.thumbnails[0]?.url) {
     out.poster = String(data.thumbnails[0].url);
+  }
+
+  // upstream で必要なヘッダ (User-Agent, Referer, Cookie 等) を proxy 用に保持
+  /** @type {Record<string, string>} */
+  const headers = {};
+  if (chosen.http_headers) {
+    for (const [k, v] of Object.entries(chosen.http_headers)) {
+      if (typeof v === 'string') headers[k] = v;
+    }
+  }
+  // Cookie は yt-dlp の format.cookies に文字列で入る (Set-Cookie 形式) → ; で分割
+  if (chosen.cookies) {
+    // Set-Cookie の "name=value; Domain=...; Path=..." 形式から name=value だけ抽出
+    const cookiePairs = chosen.cookies
+      .split(/,\s*(?=[A-Za-z_]+=)/) // 複数 cookie は ", name=" で区切られる
+      .map((c) => c.split(';')[0].trim())
+      .filter(Boolean);
+    if (cookiePairs.length > 0) {
+      headers['Cookie'] = cookiePairs.join('; ');
+    }
+  }
+  // Referer はページ URL を強制セット (yt-dlp のヘッダに無くても付ける)
+  if (!headers['Referer'] && !headers['referer']) {
+    headers['Referer'] = pageUrl;
+  }
+  if (Object.keys(headers).length > 0) {
+    out.httpHeaders = headers;
+    out.referrer = pageUrl;
   }
   return out;
 }
