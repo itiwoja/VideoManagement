@@ -309,10 +309,26 @@ protectedRouter.post('/extract', async (req, res) => {
 
 // 認証付き proxy: 抽出した動画 URL を upstream の正しいヘッダで fetch して stream する。
 // `<video src="/api/stream/<token>">` で再生されることを想定。
-// Range リクエストにも対応 (動画のシーク用)。
+// Range リクエスト対応 (シーク用)。
+// HLS (m3u8) の場合は中身を rewrite して segment URL も proxy 経由にする。
+//
+// クエリパラメータ `?u=<base64url>` で sub-resource URL を指定可能 (m3u8 セグメント等)。
+// 親 token のヘッダを継承して fetch する。
 protectedRouter.get('/stream/:token', async (req, res) => {
   const entry = getProxyEntry(req.params.token);
   if (!entry) return errorResponse(res, 404, 'token not found or expired');
+
+  // ?u= が指定されていればそれを fetch、なければ entry.url を fetch
+  let targetUrl = entry.url;
+  const sub = typeof req.query.u === 'string' ? req.query.u : null;
+  if (sub) {
+    try {
+      targetUrl = Buffer.from(sub, 'base64url').toString('utf8');
+      new URL(targetUrl); // validation
+    } catch {
+      return errorResponse(res, 400, 'invalid sub-resource url');
+    }
+  }
 
   // Range は upstream にそのまま転送 (シーク・部分再生のため)
   const upstreamHeaders = { ...entry.headers };
@@ -321,11 +337,30 @@ protectedRouter.get('/stream/:token', async (req, res) => {
   }
 
   try {
-    const upstream = await fetch(entry.url, {
+    const upstream = await fetch(targetUrl, {
       method: 'GET',
       headers: upstreamHeaders,
       redirect: 'follow',
     });
+
+    const upstreamCT = upstream.headers.get('content-type') || '';
+    const looksLikeM3u8 =
+      upstreamCT.includes('mpegurl') ||
+      upstreamCT.includes('mpegURL') ||
+      /\.m3u8(\?|#|$)/i.test(targetUrl);
+
+    if (looksLikeM3u8 && upstream.body) {
+      // HLS playlist: 中身を全部読んで segment / variant URL を rewrite
+      const text = await upstream.text();
+      const baseUrl = new URL(targetUrl);
+      const rewritten = rewriteM3u8(text, baseUrl, req.params.token);
+
+      res.status(upstream.status);
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(rewritten);
+      return;
+    }
 
     res.status(upstream.status);
     // 通すべきレスポンスヘッダ
@@ -343,7 +378,11 @@ protectedRouter.get('/stream/:token', async (req, res) => {
       if (v) res.setHeader(h, v);
     }
     // Content-Type は entry.mediaType を優先 (upstream が誤った type を返すケースあり)
-    if (entry.mediaType && !upstream.headers.get('content-type')?.startsWith('video')) {
+    if (
+      !sub &&
+      entry.mediaType &&
+      !upstream.headers.get('content-type')?.startsWith('video')
+    ) {
       res.setHeader('Content-Type', entry.mediaType);
     }
 
@@ -365,11 +404,55 @@ protectedRouter.get('/stream/:token', async (req, res) => {
     res.end();
   } catch (err) {
     if (!res.headersSent) {
-      return errorResponse(res, 502, `upstream error: ${err instanceof Error ? err.message : String(err)}`);
+      return errorResponse(
+        res,
+        502,
+        `upstream error: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     res.end();
   }
 });
+
+/**
+ * HLS m3u8 のテキストを受け取り、segment / variant URL を proxy URL に書き換える。
+ * @param {string} text         m3u8 の本文
+ * @param {URL} baseUrl         m3u8 自身の URL (相対パス解決用)
+ * @param {string} parentToken  /api/stream/<token> の token
+ * @returns {string} 書き換え済み m3u8
+ */
+function rewriteM3u8(text, baseUrl, parentToken) {
+  /** @param {string} maybeUrl */
+  const toProxy = (maybeUrl) => {
+    let abs;
+    try {
+      abs = new URL(maybeUrl, baseUrl).toString();
+    } catch {
+      return maybeUrl;
+    }
+    const enc = Buffer.from(abs, 'utf8').toString('base64url');
+    return `/api/stream/${parentToken}?u=${enc}`;
+  };
+
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  for (const raw of lines) {
+    const line = raw;
+    if (!line || line.startsWith('#')) {
+      // タグ行: URI="..." を含む可能性 (#EXT-X-KEY, #EXT-X-MAP 等)
+      const replaced = line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${toProxy(u)}"`);
+      out.push(replaced);
+      continue;
+    }
+    // 空行以外の URL 行
+    if (line.trim().length === 0) {
+      out.push(line);
+      continue;
+    }
+    out.push(toProxy(line.trim()));
+  }
+  return out.join('\n');
+}
 
 protectedRouter.patch('/videos/:id', (req, res) => {
   const id = parseId(req.params.id);
