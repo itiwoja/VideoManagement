@@ -115,10 +115,54 @@ function extractTitleTag(html) {
 }
 
 /**
+ * 「HTML scrape より yt-dlp の方が信頼できる」 ホスト名のリスト。
+ * - pornhub: og:video が iframe URL なので、ブラウザから iframe で開いてもプレーヤーが
+ *   制限で動かない。yt-dlp なら mp4 直リンクが取れる。
+ * - missav / spankbang / tktube / javrank: bot 防御 + JS 動的プレーヤーで HTML scrape
+ *   が機能しない、yt-dlp 一択。
+ * @param {string} pageUrl
+ * @returns {boolean}
+ */
+function shouldPreferYtDlp(pageUrl) {
+  let host;
+  try {
+    host = new URL(pageUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  const preferred = [
+    'pornhub.com',
+    'jp.pornhub.com',
+    'spankbang.com',
+    'jp.spankbang.com',
+    'missav.ws',
+    'missav.com',
+    'tktube.com',
+    'javrank.com',
+    'xvideos.com',
+    'xnxx.com',
+    'xhamster.com',
+    'redtube.com',
+    'youporn.com',
+  ];
+  return preferred.some((d) => host === d || host.endsWith(`.${d}`));
+}
+
+/**
  * @param {string} pageUrl
  * @returns {Promise<ExtractedMedia|null>}
  */
 export async function extractMedia(pageUrl) {
+  // 既知の "HTML scrape よりも yt-dlp が信頼できる" サイトは先に yt-dlp 試す
+  if (shouldPreferYtDlp(pageUrl)) {
+    try {
+      const ytdlp = await extractWithYtDlp(pageUrl);
+      if (ytdlp) return ytdlp;
+    } catch {
+      // 失敗したら HTML scrape に流れる
+    }
+  }
+
   const html = await fetchHtml(pageUrl);
 
   // HTML 取得できたら og:video / JSON-LD / <video src> / 直リンクを試す
