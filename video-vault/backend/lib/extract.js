@@ -17,14 +17,31 @@
 // User-Agent はデスクトップ Chrome を装う (一部 site が UA で出し分けるため)。
 
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
 
 const FETCH_TIMEOUT_MS = 12_000;
 
-// yt-dlp の場所 (Windows 専用、env で上書き可)
-const YT_DLP_PATH = process.env.YT_DLP_PATH || 'C:\\Users\\1kkim\\projects\\yt-dlp.exe';
+/**
+ * yt-dlp.exe のパスを解決する。
+ * 優先順位: env YT_DLP_PATH > tools/yt-dlp.exe > root/yt-dlp.exe (legacy)
+ * @returns {string}
+ */
+function resolveYtDlpPath() {
+  if (process.env.YT_DLP_PATH) return process.env.YT_DLP_PATH;
+  const candidates = [
+    'C:\\Users\\1kkim\\projects\\tools\\yt-dlp.exe',
+    'C:\\Users\\1kkim\\projects\\yt-dlp.exe', // 旧位置 (後方互換)
+  ];
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return candidates[0]; // fallback (spawn 時に明確なエラーで落ちる)
+}
+
+const YT_DLP_PATH = resolveYtDlpPath();
 const YT_DLP_TIMEOUT_MS = 20_000;
 
 /**
