@@ -1,0 +1,161 @@
+/* popup.css — シンプルでモダンな UI、ダークモード前提 */
+
+:root {
+  --bg: #18181b;
+  --bg-2: #27272a;
+  --fg: #f4f4f5;
+  --fg-2: #a1a1aa;
+  --border: #3f3f46;
+  --accent: #10b981;
+  --accent-fg: #052e16;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN",
+               "Yu Gothic Medium", "MS PGothic", sans-serif;
+  font-size: 12px;
+  width: 320px;
+  min-height: 200px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+header h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+main {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.current-tab {
+  padding: 8px 10px;
+  background: var(--bg-2);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.current-tab .title {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.current-tab .url {
+  font-size: 10px;
+  color: var(--fg-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg);
+  transition: background 0.1s, border 0.1s;
+}
+
+button:hover {
+  border-color: var(--fg-2);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--fg);
+  color: var(--bg);
+  border-color: var(--fg);
+  font-weight: 500;
+  padding: 10px 12px;
+}
+
+button.primary:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-fg);
+}
+
+button.link {
+  background: transparent;
+  border: none;
+  color: var(--fg-2);
+  font-size: 11px;
+  padding: 4px 6px;
+}
+
+button.link:hover {
+  color: var(--fg);
+  background: var(--bg);
+}
+
+.result {
+  font-size: 11px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-2);
+  border-left: 3px solid var(--accent);
+}
+
+.result.error {
+  border-left-color: var(--danger);
+  color: #fca5a5;
+}
+
+.result.dup {
+  border-left-color: #fbbf24;
+}
+
+.hidden {
+  display: none !important;
+}
+
+footer {
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.badge {
+  font-size: 10px;
+  color: var(--fg-2);
+}
+
+.badge #count {
+  color: var(--fg);
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+}

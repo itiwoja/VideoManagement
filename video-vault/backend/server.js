@@ -39,13 +39,17 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
   process.exit(1);
 }
 
-const COOKIE_SECURE =
-  process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production';
+// COOKIE_SECURE=true で常に Secure を強制 (本番 HTTPS-only 配信向け)。
+// 通常は接続プロトコルから自動判定 (HTTP localhost は非 Secure、HTTPS Funnel は Secure)。
+const COOKIE_SECURE_FORCE = process.env.COOKIE_SECURE === 'true';
 
 const db = openDb();
 migrate(db);
 
 const app = express();
+
+// X-Forwarded-Proto を信用 (Tailscale Funnel など reverse proxy 越しの HTTPS 検出用)
+app.set('trust proxy', true);
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
@@ -61,13 +65,27 @@ const parseId = (raw) => {
   return Number.isInteger(n) && n > 0 ? n : null;
 };
 
-function setSessionCookieOn(res) {
-  const c = sessionCookie(COOKIE_SECURE);
+/**
+ * リクエストが HTTPS で来てるか判定。reverse proxy の X-Forwarded-Proto も考慮。
+ * @param {import('express').Request} req
+ * @returns {boolean}
+ */
+function isSecureConnection(req) {
+  if (req.secure) return true;
+  const xfp = req.headers['x-forwarded-proto'];
+  if (typeof xfp === 'string' && xfp.split(',')[0].trim() === 'https') return true;
+  return false;
+}
+
+function setSessionCookieOn(req, res) {
+  const secure = COOKIE_SECURE_FORCE || isSecureConnection(req);
+  const c = sessionCookie(secure);
   res.cookie(c.name, createSessionJwt(), c.options);
 }
 
-function clearSessionCookieOn(res) {
-  const c = sessionCookie(COOKIE_SECURE);
+function clearSessionCookieOn(req, res) {
+  const secure = COOKIE_SECURE_FORCE || isSecureConnection(req);
+  const c = sessionCookie(secure);
   res.clearCookie(c.name, c.options);
 }
 
@@ -92,7 +110,7 @@ app.post('/api/auth/setup', setupLimiter, async (req, res) => {
   try {
     const hash = await hashPassword(password);
     setPasswordHash(db, hash);
-    setSessionCookieOn(res);
+    setSessionCookieOn(req, res);
     return successResponse(res, { initialized: true });
   } catch (err) {
     return errorResponse(res, 500, 'setup failed');
@@ -113,12 +131,12 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const ok = await verifyPassword(password, stored);
   if (!ok) return errorResponse(res, 401, 'unauthorized');
 
-  setSessionCookieOn(res);
+  setSessionCookieOn(req, res);
   return successResponse(res, { ok: true });
 });
 
-app.post('/api/auth/logout', (_req, res) => {
-  clearSessionCookieOn(res);
+app.post('/api/auth/logout', (req, res) => {
+  clearSessionCookieOn(req, res);
   return successResponse(res, { ok: true });
 });
 
@@ -147,7 +165,7 @@ app.post('/api/auth/change', requireAuth(db), async (req, res) => {
   }
   const newHash = await hashPassword(next);
   setPasswordHash(db, newHash);
-  setSessionCookieOn(res);
+  setSessionCookieOn(req, res);
   return successResponse(res, { ok: true });
 });
 

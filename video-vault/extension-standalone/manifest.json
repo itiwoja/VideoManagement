@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Video Vault",
+  "version": "0.1.0",
+  "description": "気になる動画 URL をワンクリックで保存して、後でタグ・評価・メモ付きで管理できるブックマーク拡張",
+  "permissions": [
+    "contextMenus",
+    "activeTab",
+    "storage",
+    "notifications",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Vault に保存",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "save_current_tab": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+V",
+        "mac": "Command+Shift+V"
+      },
+      "description": "現在のタブを Vault に保存"
+    }
+  },
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-48.png",
+    "128": "icon-128.png"
+  }
+}

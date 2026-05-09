@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Hls from 'hls.js';
 import type { Video } from '../types';
 import { resolveSource } from '../lib/video-source';
 import { extractMedia, type ExtractedMedia } from '../lib/api';
@@ -134,54 +135,39 @@ function UnsupportedBlock({ video, onClose }: { video: Video; onClose: () => voi
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // m3u8 を Chrome 系で再生する場合のみ hls.js を CDN から遅延読み込み
+  // m3u8 を Chrome 系で再生する場合のみ hls.js を attach
+  // hls.js は npm dep として bundle 済み (静的 import)
   useEffect(() => {
     if (state.phase !== 'success') return;
     const el = videoRef.current;
     if (!el) return;
     const isHls = state.media.mediaType === 'application/x-mpegURL';
-    const canNative = el.canPlayType('application/vnd.apple.mpegurl') !== '';
 
-    if (!isHls || canNative) {
+    // 非 HLS (mp4 等) はそのまま src
+    if (!isHls) {
       el.src = state.media.url;
       el.play().catch(() => {});
       return;
     }
 
-    // hls.js を CDN から動的 import (TS が URL import を解決できないので
-    // window.eval('import(...)') 経由で実行時に読み込む)
-    let cancelled = false;
-    interface HlsLike {
-      loadSource: (s: string) => void;
-      attachMedia: (e: HTMLVideoElement) => void;
-      destroy: () => void;
+    // HLS の優先順:
+    //   1. hls.js が動く環境 (Chrome / Firefox / Edge) は hls.js を使う
+    //      Chrome は canPlayType で 'maybe' を返すが、実際にはネイティブ再生できない罠あり。
+    //   2. hls.js 非対応で Safari ネイティブ HLS が動くなら素の src
+    //   3. それも無ければフォールバック src (再生は失敗するがエラー表示はされる)
+    if (Hls.isSupported()) {
+      const hls = new Hls();
+      hls.loadSource(state.media.url);
+      hls.attachMedia(el);
+      hlsRef.current = hls;
+      return;
     }
-    interface HlsCtor {
-      new (): HlsLike;
-    }
-    (async () => {
-      try {
-        const dynImport = new Function(
-          'u',
-          'return import(u)',
-        ) as (u: string) => Promise<{ default: HlsCtor }>;
-        const mod = await dynImport(
-          'https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.mjs',
-        );
-        if (cancelled) return;
-        const Hls = mod.default;
-        const hls = new Hls();
-        hls.loadSource(state.media.url);
-        hls.attachMedia(el);
-        hlsRef.current = hls;
-      } catch {
-        // hls.js 読み込み失敗時は素の <video src> に fallback
-        el.src = state.media.url;
-      }
-    })();
+
+    const canNativeHls = el.canPlayType('application/vnd.apple.mpegurl') !== '';
+    el.src = state.media.url;
+    if (canNativeHls) el.play().catch(() => {});
 
     return () => {
-      cancelled = true;
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

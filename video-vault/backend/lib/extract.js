@@ -17,7 +17,9 @@
 // User-Agent はデスクトップ Chrome を装う (一部 site が UA で出し分けるため)。
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -69,7 +71,10 @@ const YT_DLP_TIMEOUT_MS = 20_000;
  * @returns {Promise<PageMetadata>}
  */
 export async function extractMetadata(pageUrl) {
-  const html = await fetchHtml(pageUrl);
+  // missav は普通の fetch だと Cloudflare 403 で空 → impersonate 経由で HTML 取得
+  const html = isMissav(pageUrl)
+    ? await fetchHtmlImpersonate(pageUrl)
+    : await fetchHtml(pageUrl);
   /** @type {PageMetadata} */
   const out = {};
 
@@ -149,10 +154,32 @@ function shouldPreferYtDlp(pageUrl) {
 }
 
 /**
+ * missav.ws / missav.com 等の Cloudflare 防御 + 難読化 JS サイト判定。
+ * @param {string} pageUrl
+ */
+function isMissav(pageUrl) {
+  let host;
+  try { host = new URL(pageUrl).hostname.toLowerCase(); }
+  catch { return false; }
+  return host === 'missav.ws' || host === 'missav.com'
+    || host.endsWith('.missav.ws') || host.endsWith('.missav.com');
+}
+
+/**
  * @param {string} pageUrl
  * @returns {Promise<ExtractedMedia|null>}
  */
 export async function extractMedia(pageUrl) {
+  // missav は Cloudflare 突破 + 難読化 JS 復号が必要なので専用ルート
+  if (isMissav(pageUrl)) {
+    try {
+      const result = await extractMissav(pageUrl);
+      if (result) return result;
+    } catch {
+      // フォールバックに流れる
+    }
+  }
+
   // 既知の "HTML scrape よりも yt-dlp が信頼できる" サイトは先に yt-dlp 試す
   if (shouldPreferYtDlp(pageUrl)) {
     try {
@@ -525,4 +552,127 @@ function absolute(base, maybeRelative) {
   } catch {
     return maybeRelative;
   }
+}
+
+// ============================================================================
+// missav 専用 extractor
+// ============================================================================
+
+/**
+ * yt-dlp の curl-cffi impersonate モードで Cloudflare 越しに HTML を取得する。
+ * yt-dlp は missav 用 extractor を持たないため "Unsupported URL" エラーで終わるが、
+ * --write-pages のおかげで HTML だけは取れている。それを読む。
+ *
+ * @param {string} pageUrl
+ * @returns {Promise<string|null>}
+ */
+async function fetchHtmlImpersonate(pageUrl) {
+  const dir = mkdtempSync(join(tmpdir(), 'vv-imp-'));
+  try {
+    await new Promise((resolve, reject) => {
+      const child = spawn(
+        YT_DLP_PATH,
+        [
+          '--impersonate', 'chrome',
+          '--write-pages',
+          '--skip-download',
+          '--no-warnings',
+          '--socket-timeout', '15',
+          pageUrl,
+        ],
+        // --write-pages は cwd に dump を書くので cwd=tmpdir に固定
+        { windowsHide: true, cwd: dir },
+      );
+      const timer = setTimeout(() => {
+        child.kill('SIGKILL');
+        reject(new Error('impersonate fetch timeout'));
+      }, YT_DLP_TIMEOUT_MS);
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        // missav 等は Unsupported URL で code=1 になるが、HTML ダンプは取れている
+        resolve(code ?? -1);
+      });
+    });
+
+    const files = readdirSync(dir);
+    const dump = files.find((f) => f.endsWith('.dump'));
+    if (!dump) return null;
+    return readFileSync(join(dir, dump), 'utf-8');
+  } catch {
+    return null;
+  } finally {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Dean Edwards "p,a,c,k,e,d" packer の復号。
+ * eval(function(p,a,c,k,e,d){...}('PAYLOAD', BASE, COUNT, 'k1|k2|...'.split('|'),0,{}))
+ * から PAYLOAD 内の `\b<base-N>\b` を辞書で置換した結果を返す。
+ *
+ * @param {string} html
+ * @returns {string|null} 復号された JS、または null
+ */
+function decodeDeanPacker(html) {
+  const m = html.match(
+    /eval\(function\(p,a,c,k,e,d\)\{[\s\S]*?\}\(\s*'((?:[^'\\]|\\.)*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:[^'\\]|\\.)*)'\.split\('\|'\)/,
+  );
+  if (!m) return null;
+  // payload 内のエスケープを戻す
+  let payload = m[1].replace(/\\'/g, "'").replace(/\\\\/g, '\\');
+  const base = parseInt(m[2], 10);
+  const count = parseInt(m[3], 10);
+  const dict = m[4].split('|');
+  for (let c = count - 1; c >= 0; c--) {
+    const word = dict[c];
+    if (!word) continue;
+    const key = c.toString(base);
+    payload = payload.replace(new RegExp('\\b' + key + '\\b', 'g'), word);
+  }
+  return payload;
+}
+
+/**
+ * missav.ws / missav.com の動画ページから master m3u8 URL を抽出する。
+ *
+ * @param {string} pageUrl
+ * @returns {Promise<ExtractedMedia|null>}
+ */
+async function extractMissav(pageUrl) {
+  const html = await fetchHtmlImpersonate(pageUrl);
+  if (!html) return null;
+
+  const decoded = decodeDeanPacker(html);
+  if (!decoded) return null;
+
+  // master playlist (`playlist.m3u8`) を最優先、無ければ任意の .m3u8
+  const masterMatch = decoded.match(/https?:\/\/[^\s'"]+?\/playlist\.m3u8(?:\?[^\s'"]*)?/);
+  const anyMatch = decoded.match(/https?:\/\/[^\s'"]+?\.m3u8(?:\?[^\s'"]*)?/);
+  const m3u8Url = masterMatch ? masterMatch[0] : anyMatch ? anyMatch[0] : null;
+  if (!m3u8Url) return null;
+
+  const meta = readMeta(html);
+  const title = meta['og:title'] || extractTitleTag(html);
+  const poster = meta['og:image:secure_url'] || meta['og:image'] || meta['twitter:image'];
+
+  /** @type {ExtractedMedia} */
+  const out = {
+    url: m3u8Url,
+    mediaType: 'application/x-mpegURL',
+    httpHeaders: {
+      'User-Agent': UA,
+      'Referer': pageUrl,
+    },
+    referrer: pageUrl,
+  };
+  if (title) out.title = title;
+  if (poster) {
+    try { out.poster = new URL(poster, pageUrl).toString(); }
+    catch { out.poster = poster; }
+  }
+  return out;
 }

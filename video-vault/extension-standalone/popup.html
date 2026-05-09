@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Vault に保存</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Video Vault</h1>
+    <button id="open-vault" class="link" title="Vault を開く">📚 Vault</button>
+  </header>
+
+  <main>
+    <div id="current-tab" class="current-tab">
+      <div class="title" id="tab-title">…</div>
+      <div class="url" id="tab-url">…</div>
+    </div>
+
+    <button id="save-btn" class="primary">
+      <span id="save-label">📥 このページを Vault に保存</span>
+    </button>
+
+    <div id="result" class="result hidden"></div>
+  </main>
+
+  <footer>
+    <span class="badge"><span id="count">0</span> 件保存中</span>
+  </footer>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Vault</title>
+  <link rel="stylesheet" href="vault.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-row">
+      <h1>Video Vault <span id="count" class="count-badge">0</span></h1>
+      <div class="actions">
+        <button id="add-btn" class="primary" title="URL を貼り付けて追加">+ 追加</button>
+        <button id="export-btn" class="ghost" title="JSON でエクスポート">↓ エクスポート</button>
+        <button id="import-btn" class="ghost" title="JSON からインポート">↑ インポート</button>
+        <input id="import-file" type="file" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div class="topbar-row">
+      <input id="search" type="search" placeholder="🔍 タイトル・サイト名で検索" class="search">
+      <select id="sort" class="select">
+        <option value="addedAt">追加日 (新しい順)</option>
+        <option value="viewCount">視聴回数</option>
+        <option value="lastViewedAt">最終視聴</option>
+      </select>
+    </div>
+    <div class="topbar-row tags-row" id="tag-filter-row">
+      <button class="tag-pill active" data-rating="all">すべて</button>
+      <button class="tag-pill" data-rating="unrated">未評価</button>
+      <button class="tag-pill" data-rating="1">★1</button>
+      <button class="tag-pill" data-rating="2">★2</button>
+      <button class="tag-pill" data-rating="3">★3</button>
+      <button class="tag-pill" data-rating="4">★4</button>
+      <button class="tag-pill" data-rating="5">★5</button>
+    </div>
+    <div class="topbar-row tags-row" id="tag-list-row"></div>
+  </header>
+
+  <main id="main">
+    <div id="empty" class="empty hidden">
+      <p>まだ何もありません</p>
+      <p class="empty-hint">右クリック → 「Vault に保存」 もしくは Ctrl+Shift+V (Cmd+Shift+V) で 1 タップ保存</p>
+    </div>
+    <ul id="grid" class="grid"></ul>
+  </main>
+
+  <!-- Add dialog -->
+  <div id="add-dialog" class="dialog hidden" role="dialog" aria-modal="true">
+    <div class="dialog-card">
+      <div class="dialog-header">
+        <h2>動画を追加</h2>
+        <button class="close" data-close="add-dialog">×</button>
+      </div>
+      <form id="add-form" class="dialog-body">
+        <label class="field">
+          URL <span class="required">*</span>
+          <div class="row">
+            <input id="add-url" type="url" required placeholder="https://...">
+            <button type="button" id="paste-btn" class="ghost small">📋 貼付</button>
+          </div>
+        </label>
+        <label class="field">
+          タイトル (任意)
+          <input id="add-title" type="text" placeholder="自動取得 / URL から推定">
+        </label>
+        <p id="add-error" class="error hidden"></p>
+        <div class="dialog-footer">
+          <button type="button" class="ghost" data-close="add-dialog">キャンセル</button>
+          <button type="submit" class="primary">登録</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Player dialog -->
+  <div id="player-dialog" class="dialog hidden" role="dialog" aria-modal="true">
+    <div class="dialog-card player-card">
+      <div class="dialog-header">
+        <h2 id="player-title">…</h2>
+        <div class="player-actions">
+          <a id="player-open-original" class="ghost small" target="_blank" rel="noopener noreferrer">↗ 元サイト</a>
+          <button class="close" data-close="player-dialog">×</button>
+        </div>
+      </div>
+      <div id="player-body" class="player-body"></div>
+    </div>
+  </div>
+
+  <!-- Edit dialog -->
+  <div id="edit-dialog" class="dialog hidden" role="dialog" aria-modal="true">
+    <div class="dialog-card">
+      <div class="dialog-header">
+        <h2>編集</h2>
+        <button class="close" data-close="edit-dialog">×</button>
+      </div>
+      <form id="edit-form" class="dialog-body">
+        <input type="hidden" id="edit-id">
+        <label class="field">
+          タイトル
+          <input id="edit-title" type="text">
+        </label>
+        <label class="field">
+          評価
+          <div class="rating" id="edit-rating">
+            <button type="button" data-r="0">クリア</button>
+            <button type="button" data-r="1">★1</button>
+            <button type="button" data-r="2">★2</button>
+            <button type="button" data-r="3">★3</button>
+            <button type="button" data-r="4">★4</button>
+            <button type="button" data-r="5">★5</button>
+          </div>
+        </label>
+        <label class="field">
+          タグ (カンマ区切り)
+          <input id="edit-tags" type="text" placeholder="チュートリアル, あとで見る">
+        </label>
+        <label class="field">
+          メモ
+          <textarea id="edit-note" rows="3"></textarea>
+        </label>
+        <div class="dialog-footer">
+          <button type="button" class="danger" id="edit-delete">削除</button>
+          <span style="flex:1"></span>
+          <button type="button" class="ghost" data-close="edit-dialog">キャンセル</button>
+          <button type="submit" class="primary">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="vault.js"></script>
+</body>
+</html>
