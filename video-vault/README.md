@@ -21,7 +21,7 @@ video-vault/
 
 ## セットアップ
 
-Node.js 22.5 以上が必要 (`node:sqlite` を使うため)。
+Node.js 22.13 以上が必要 (`node:sqlite` の現行 API 挙動を使うため)。
 
 ### 1. backend を起動
 

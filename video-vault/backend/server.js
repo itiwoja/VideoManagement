@@ -1,6 +1,6 @@
 // server.js
 // Express HTTP layer. ビジネスロジックは lib/* に分離。
-// Requires Node.js 22.5+ for built-in node:sqlite.
+// Requires Node.js 22.13+ for the current built-in node:sqlite behavior.
 //
 // Phase 3: パスワード認証 + API トークン (lib/auth.js, auth-mw.js, rate-limit.js)。
 
@@ -8,6 +8,8 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { openDb, migrate } from './lib/db.js';
 import * as videosRepo from './lib/videos.js';
 import * as tagsRepo from './lib/tags.js';
@@ -29,7 +31,26 @@ import {
 import { requireAuth } from './lib/auth-mw.js';
 import { rateLimit } from './lib/rate-limit.js';
 import { extractMedia, extractMetadata } from './lib/extract.js';
-import { saveProxyEntry, getProxyEntry } from './lib/proxy-store.js';
+import {
+  getProxyEntry,
+  registerProxyUrls,
+  saveProxyEntry,
+} from './lib/proxy-store.js';
+import {
+  getRawProxyTargetQuery,
+  prepareHlsManifest,
+  readManifestText,
+} from './lib/hls-proxy.js';
+import { fetchStreamResource } from './lib/proxy-stream.js';
+import {
+  assertPublicHttpUrl,
+  parseHttpUrl,
+} from './lib/safe-fetch.js';
+import {
+  classifyExtractInitialError,
+  classifyExtractRuntimeError,
+  classifyStreamTargetError,
+} from './lib/http-policy.js';
 
 // ----------------------------------------------------- env validation (fail fast)
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -43,7 +64,7 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 // 通常は接続プロトコルから自動判定 (HTTP localhost は非 Secure、HTTPS Funnel は Secure)。
 const COOKIE_SECURE_FORCE = process.env.COOKIE_SECURE === 'true';
 
-const db = openDb();
+const db = openDb(process.env.VIDEO_VAULT_DB_PATH || undefined);
 migrate(db);
 
 const app = express();
@@ -231,7 +252,7 @@ protectedRouter.post('/videos', async (req, res) => {
     return res.status(400).json({ error: 'url is required' });
   }
   try {
-    new URL(url);
+    parseHttpUrl(url);
   } catch {
     return res.status(400).json({ error: 'invalid url' });
   }
@@ -294,9 +315,10 @@ protectedRouter.post('/extract', async (req, res) => {
     return errorResponse(res, 400, 'url required');
   }
   try {
-    new URL(url);
-  } catch {
-    return errorResponse(res, 400, 'invalid url');
+    parseHttpUrl(url);
+  } catch (err) {
+    const failure = classifyExtractInitialError(err);
+    return errorResponse(res, failure.status, failure.message);
   }
   try {
     const media = await extractMedia(url);
@@ -304,8 +326,9 @@ protectedRouter.post('/extract', async (req, res) => {
 
     // ヘッダが必要なら proxy URL に変換 (yt-dlp 経路は大抵必要)
     if (media.httpHeaders && Object.keys(media.httpHeaders).length > 0) {
+      const proxyRoot = await assertPublicHttpUrl(media.url);
       const token = saveProxyEntry({
-        url: media.url,
+        url: proxyRoot.href,
         headers: media.httpHeaders,
         mediaType: media.mediaType,
       });
@@ -321,7 +344,8 @@ protectedRouter.post('/extract', async (req, res) => {
     // ヘッダ不要 (og:video 直リンク・YouTube embed 等) はそのまま
     return successResponse(res, media);
   } catch (err) {
-    return errorResponse(res, 500, err instanceof Error ? err.message : 'extract failed');
+    const failure = classifyExtractRuntimeError(err);
+    return errorResponse(res, failure.status, failure.message);
   }
 });
 
@@ -336,47 +360,38 @@ protectedRouter.get('/stream/:token', async (req, res) => {
   const entry = getProxyEntry(req.params.token);
   if (!entry) return errorResponse(res, 404, 'token not found or expired');
 
-  // ?u= が指定されていればそれを fetch、なければ entry.url を fetch
-  let targetUrl = entry.url;
-  const sub = typeof req.query.u === 'string' ? req.query.u : null;
-  if (sub) {
-    try {
-      targetUrl = Buffer.from(sub, 'base64url').toString('utf8');
-      new URL(targetUrl); // validation
-    } catch {
-      return errorResponse(res, 400, 'invalid sub-resource url');
-    }
-  }
-
-  // Range は upstream にそのまま転送 (シーク・部分再生のため)
-  const upstreamHeaders = { ...entry.headers };
-  if (req.headers.range) {
-    upstreamHeaders['Range'] = String(req.headers.range);
-  }
-
   try {
-    const upstream = await fetch(targetUrl, {
-      method: 'GET',
-      headers: upstreamHeaders,
-      redirect: 'follow',
+    const queryValue = getRawProxyTargetQuery(req.originalUrl, req.query.u);
+    const {
+      response: upstream,
+      url: finalUrl,
+      isHls,
+    } = await fetchStreamResource({
+      entry,
+      queryValue,
+      range: typeof req.headers.range === 'string' ? req.headers.range : undefined,
     });
 
-    const upstreamCT = upstream.headers.get('content-type') || '';
-    const looksLikeM3u8 =
-      upstreamCT.includes('mpegurl') ||
-      upstreamCT.includes('mpegURL') ||
-      /\.m3u8(\?|#|$)/i.test(targetUrl);
+    if (isHls) {
+      if (!upstream.body) return errorResponse(res, 502, 'upstream unavailable');
 
-    if (looksLikeM3u8 && upstream.body) {
-      // HLS playlist: 中身を全部読んで segment / variant URL を rewrite
-      const text = await upstream.text();
-      const baseUrl = new URL(targetUrl);
-      const rewritten = rewriteM3u8(text, baseUrl, req.params.token);
+      let rewritten;
+      let registered;
+      try {
+        const text = await readManifestText(upstream);
+        rewritten = prepareHlsManifest(text, finalUrl, req.params.token);
+        registered = registerProxyUrls(req.params.token, rewritten.urls);
+      } catch {
+        return errorResponse(res, 502, 'upstream unavailable');
+      }
+      if (!registered) {
+        return errorResponse(res, 404, 'token not found or expired');
+      }
 
       res.status(upstream.status);
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       res.setHeader('Cache-Control', 'no-store');
-      res.send(rewritten);
+      res.send(rewritten.text);
       return;
     }
 
@@ -397,7 +412,7 @@ protectedRouter.get('/stream/:token', async (req, res) => {
     }
     // Content-Type は entry.mediaType を優先 (upstream が誤った type を返すケースあり)
     if (
-      !sub &&
+      queryValue === undefined &&
       entry.mediaType &&
       !upstream.headers.get('content-type')?.startsWith('video')
     ) {
@@ -422,55 +437,12 @@ protectedRouter.get('/stream/:token', async (req, res) => {
     res.end();
   } catch (err) {
     if (!res.headersSent) {
-      return errorResponse(
-        res,
-        502,
-        `upstream error: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const failure = classifyStreamTargetError(err);
+      return errorResponse(res, failure.status, failure.message);
     }
     res.end();
   }
 });
-
-/**
- * HLS m3u8 のテキストを受け取り、segment / variant URL を proxy URL に書き換える。
- * @param {string} text         m3u8 の本文
- * @param {URL} baseUrl         m3u8 自身の URL (相対パス解決用)
- * @param {string} parentToken  /api/stream/<token> の token
- * @returns {string} 書き換え済み m3u8
- */
-function rewriteM3u8(text, baseUrl, parentToken) {
-  /** @param {string} maybeUrl */
-  const toProxy = (maybeUrl) => {
-    let abs;
-    try {
-      abs = new URL(maybeUrl, baseUrl).toString();
-    } catch {
-      return maybeUrl;
-    }
-    const enc = Buffer.from(abs, 'utf8').toString('base64url');
-    return `/api/stream/${parentToken}?u=${enc}`;
-  };
-
-  const lines = text.split(/\r?\n/);
-  const out = [];
-  for (const raw of lines) {
-    const line = raw;
-    if (!line || line.startsWith('#')) {
-      // タグ行: URI="..." を含む可能性 (#EXT-X-KEY, #EXT-X-MAP 等)
-      const replaced = line.replace(/URI="([^"]+)"/g, (_m, u) => `URI="${toProxy(u)}"`);
-      out.push(replaced);
-      continue;
-    }
-    // 空行以外の URL 行
-    if (line.trim().length === 0) {
-      out.push(line);
-      continue;
-    }
-    out.push(toProxy(line.trim()));
-  }
-  return out.join('\n');
-}
 
 protectedRouter.patch('/videos/:id', (req, res) => {
   const id = parseId(req.params.id);
@@ -565,8 +537,12 @@ app.use('/api', protectedRouter);
 // ------------------------------------------------------------------ start
 const PORT = Number(process.env.PORT || 3001);
 const HOST = process.env.HOST || '127.0.0.1';
-app.listen(PORT, HOST, () => {
-  process.stdout.write(`video-vault backend listening on http://${HOST}:${PORT}\n`);
-});
+const isMain = Boolean(process.argv[1]) &&
+  import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (isMain) {
+  app.listen(PORT, HOST, () => {
+    process.stdout.write(`video-vault backend listening on http://${HOST}:${PORT}\n`);
+  });
+}
 
 export { app, db };

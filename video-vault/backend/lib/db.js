@@ -6,7 +6,7 @@
 //   - migrations/NNN_xxx.sql を順に実行
 //   - ALTER TABLE のような非冪等な操作は SQL ファイルではなく migrate.js 側で実施
 //
-// Node.js 22.5+ の node:sqlite を使用。
+// Node.js 22.13+ の node:sqlite を使用。
 
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'url';
@@ -17,10 +17,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 /**
+ * @param {string} [dbPath]
  * @returns {DatabaseSync}
  */
-export function openDb() {
-  const dbPath = path.join(ROOT, 'data.db');
+export function openDb(dbPath = path.join(ROOT, 'data.db')) {
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA foreign_keys = ON;');
   db.exec('PRAGMA journal_mode = WAL;');

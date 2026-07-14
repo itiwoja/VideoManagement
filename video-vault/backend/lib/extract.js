@@ -20,6 +20,11 @@ import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import {
+  assertPublicHttpUrl,
+  isUrlPolicyError,
+  safeFetch,
+} from './safe-fetch.js';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
@@ -71,6 +76,8 @@ const YT_DLP_TIMEOUT_MS = 20_000;
  * @returns {Promise<PageMetadata>}
  */
 export async function extractMetadata(pageUrl) {
+  pageUrl = (await assertPublicHttpUrl(pageUrl)).href;
+
   // missav は普通の fetch だと Cloudflare 403 で空 → impersonate 経由で HTML 取得
   const html = isMissav(pageUrl)
     ? await fetchHtmlImpersonate(pageUrl)
@@ -103,7 +110,8 @@ export async function extractMetadata(pageUrl) {
       if (!out.title && ytdlp.title) out.title = ytdlp.title;
       if (!out.thumbnail && ytdlp.poster) out.thumbnail = ytdlp.poster;
     }
-  } catch {
+  } catch (error) {
+    if (isUrlPolicyError(error)) throw error;
     // 失敗時はそのまま (best effort)
   }
 
@@ -170,12 +178,15 @@ function isMissav(pageUrl) {
  * @returns {Promise<ExtractedMedia|null>}
  */
 export async function extractMedia(pageUrl) {
+  pageUrl = (await assertPublicHttpUrl(pageUrl)).href;
+
   // missav は Cloudflare 突破 + 難読化 JS 復号が必要なので専用ルート
   if (isMissav(pageUrl)) {
     try {
       const result = await extractMissav(pageUrl);
       if (result) return result;
-    } catch {
+    } catch (error) {
+      if (isUrlPolicyError(error)) throw error;
       // フォールバックに流れる
     }
   }
@@ -185,7 +196,8 @@ export async function extractMedia(pageUrl) {
     try {
       const ytdlp = await extractWithYtDlp(pageUrl);
       if (ytdlp) return ytdlp;
-    } catch {
+    } catch (error) {
+      if (isUrlPolicyError(error)) throw error;
       // 失敗したら HTML scrape に流れる
     }
   }
@@ -252,7 +264,8 @@ export async function extractMedia(pageUrl) {
   try {
     const ytdlp = await extractWithYtDlp(pageUrl);
     if (ytdlp) return ytdlp;
-  } catch {
+  } catch (error) {
+    if (isUrlPolicyError(error)) throw error;
     // yt-dlp が無いか、タイムアウトした場合は無視
   }
 
@@ -266,6 +279,8 @@ export async function extractMedia(pageUrl) {
  * @returns {Promise<ExtractedMedia|null>}
  */
 async function extractWithYtDlp(pageUrl) {
+  pageUrl = (await assertPublicHttpUrl(pageUrl)).href;
+
   /** @type {Promise<{stdout: string, stderr: string, code: number}>} */
   const result = await new Promise((resolve, reject) => {
     const child = spawn(
@@ -419,7 +434,7 @@ async function fetchHtml(url) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const { response: res } = await safeFetch(url, {
       method: 'GET',
       headers: {
         'User-Agent': UA,
@@ -427,14 +442,14 @@ async function fetchHtml(url) {
           'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'ja,en;q=0.8',
       },
-      redirect: 'follow',
       signal: controller.signal,
     });
     if (!res.ok) return null;
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('text/html') && !ct.includes('application/xhtml')) return null;
     return await res.text();
-  } catch {
+  } catch (error) {
+    if (isUrlPolicyError(error)) throw error;
     return null;
   } finally {
     clearTimeout(t);
@@ -567,6 +582,8 @@ function absolute(base, maybeRelative) {
  * @returns {Promise<string|null>}
  */
 async function fetchHtmlImpersonate(pageUrl) {
+  pageUrl = (await assertPublicHttpUrl(pageUrl)).href;
+
   const dir = mkdtempSync(join(tmpdir(), 'vv-imp-'));
   try {
     await new Promise((resolve, reject) => {

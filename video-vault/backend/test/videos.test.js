@@ -4,13 +4,18 @@
 // Run: npm test
 //
 // Phase 3 で認証層が入ったので、/api/videos などは 401 を返すようになった。
-// このスモークは「サーバー稼働 + auth エンドポイント疎通」のみを見る。
-// 詳しい認証フローの結合テストは別途 (Playwright 等) で書く想定。
+// in-memory DB と空きポートで実サーバーを起動し、auth と URL-policy 境界を確認する。
 
-import { test, before } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import { encodeProxyTarget } from '../lib/hls-proxy.js';
+import { saveProxyEntry } from '../lib/proxy-store.js';
 
-const BASE = 'http://127.0.0.1:3001';
+let BASE;
+let server;
+let db;
+let authCookie;
 
 async function fetchJson(path, init = {}) {
   const res = await fetch(`${BASE}${path}`, init);
@@ -21,15 +26,35 @@ async function fetchJson(path, init = {}) {
   } catch {
     /* ignore */
   }
-  return { status: res.status, json, text };
+  return { status: res.status, json, text, headers: res.headers };
 }
 
 before(async () => {
-  const res = await fetchJson('/api/health').catch(() => ({ status: 0 }));
-  if (res.status !== 200) {
-    console.warn('[skip] server is not running on 3001 — skipping integration tests');
-    process.exit(0);
-  }
+  process.env.JWT_SECRET = 'test-only-secret-that-is-at-least-32-characters';
+  process.env.VIDEO_VAULT_DB_PATH = ':memory:';
+  const serverModule = await import(`../server.js?integration=${Date.now()}`);
+  db = serverModule.db;
+  server = serverModule.app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  BASE = `http://127.0.0.1:${address.port}`;
+
+  const setup = await fetchJson('/api/auth/setup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'integration-test-password' }),
+  });
+  assert.equal(setup.status, 200);
+  const setCookie = setup.headers.get('set-cookie');
+  assert.ok(setCookie);
+  authCookie = setCookie.split(';', 1)[0];
+});
+
+after(async () => {
+  if (server) await new Promise((resolve) => server.close(resolve));
+  db?.close();
+  delete process.env.VIDEO_VAULT_DB_PATH;
 });
 
 test('GET /api/health returns ok', async () => {
@@ -83,4 +108,88 @@ test('POST /api/auth/login with bogus password returns 401 or 409', async () => 
     body: JSON.stringify({ password: 'notrealpassword12345' }),
   });
   assert.ok(status === 401 || status === 409, `unexpected status ${status}`);
+});
+
+test('POST /api/extract rejects a non-HTTP URL as malformed input', async () => {
+  const { status, json } = await fetchJson('/api/extract', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: authCookie,
+    },
+    body: JSON.stringify({ url: 'file:///etc/passwd' }),
+  });
+  assert.equal(status, 400);
+  assert.equal(json.error, 'invalid url');
+});
+
+test('POST /api/extract rejects a private HTTP destination with 403', async () => {
+  const { status, json } = await fetchJson('/api/extract', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: authCookie,
+    },
+    body: JSON.stringify({ url: 'http://127.0.0.1/admin' }),
+  });
+  assert.equal(status, 403);
+  assert.equal(json.error, 'url not allowed');
+});
+
+test('GET /api/stream denies a forged cross-origin sub-resource before fetch', async () => {
+  const token = saveProxyEntry({
+    url: 'https://93.184.216.34/master.m3u8',
+    headers: { Cookie: 'must-not-leak' },
+    mediaType: 'application/x-mpegURL',
+  });
+  const forged = encodeProxyTarget('https://attacker.example/steal');
+  const { status, json } = await fetchJson(`/api/stream/${token}?u=${forged}`, {
+    headers: { Cookie: authCookie },
+  });
+  assert.equal(status, 403);
+  assert.equal(json.error, 'sub-resource url not allowed');
+});
+
+test('GET /api/stream rejects malformed sub-resource encoding with 400', async () => {
+  const token = saveProxyEntry({
+    url: 'https://93.184.216.34/master.m3u8',
+    headers: {},
+    mediaType: 'application/x-mpegURL',
+  });
+  const { status, json } = await fetchJson(`/api/stream/${token}?u=%25%25%25`, {
+    headers: { Cookie: authCookie },
+  });
+  assert.equal(status, 400);
+  assert.equal(json.error, 'invalid sub-resource url');
+});
+
+test('GET /api/stream rejects a percent-encoded alias of a canonical sub-resource', async () => {
+  const token = saveProxyEntry({
+    url: 'https://93.184.216.34/master.m3u8',
+    headers: {},
+    mediaType: 'application/x-mpegURL',
+  });
+  const canonical = encodeProxyTarget('https://attacker.example/steal');
+  const firstByteAlias = `%${canonical.charCodeAt(0).toString(16)}`;
+  const { status, json } = await fetchJson(
+    `/api/stream/${token}?u=${firstByteAlias}${canonical.slice(1)}`,
+    { headers: { Cookie: authCookie } },
+  );
+  assert.equal(status, 400);
+  assert.equal(json.error, 'invalid sub-resource url');
+});
+
+test('GET /api/stream rejects a structured non-string sub-resource query', async () => {
+  const token = saveProxyEntry({
+    url: 'https://93.184.216.34/master.m3u8',
+    headers: {},
+    mediaType: 'application/x-mpegURL',
+  });
+  const canonical = encodeProxyTarget('https://attacker.example/steal');
+  const { status, json } = await fetchJson(
+    `/api/stream/${token}?u[]=${canonical}`,
+    { headers: { Cookie: authCookie } },
+  );
+  assert.equal(status, 400);
+  assert.equal(json.error, 'invalid sub-resource url');
 });
