@@ -97,4 +97,15 @@ export function migrate(db) {
     }
     setUserVersion(db, 4);
   }
+
+  // ---- v5: link rot detection (#8) ------------------------------------------
+  if (current < 5) {
+    if (!columnExists(db, 'videos', 'link_status')) {
+      db.exec('ALTER TABLE videos ADD COLUMN link_status TEXT;'); // null | 'ok' | 'broken' | 'unknown'
+    }
+    if (!columnExists(db, 'videos', 'link_checked_at')) {
+      db.exec('ALTER TABLE videos ADD COLUMN link_checked_at TEXT;');
+    }
+    setUserVersion(db, 5);
+  }
 }

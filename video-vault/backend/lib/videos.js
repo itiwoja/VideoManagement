@@ -27,6 +27,7 @@
  * @property {number} [ratingExact]       完全一致 (frontend デフォルト)
  * @property {number} [ratingMin]         この評価以上に絞り込み (互換維持)
  * @property {boolean} [unratedOnly]      true なら rating IS NULL のみ
+ * @property {boolean} [brokenOnly]       true なら link_status = 'broken' のみ (#8)
  */
 
 const ALLOWED_SORT = new Set(['added_at', 'view_count', 'last_viewed_at']);
@@ -90,6 +91,10 @@ export function findAll(db, filters = {}) {
 
   // ゴミ箱に入っている(deleted_at IS NOT NULL)動画は通常一覧には出さない (#10)
   conditions.push('v.deleted_at IS NULL');
+
+  if (filters.brokenOnly) {
+    conditions.push("v.link_status = 'broken'");
+  }
 
   const where = `WHERE ${conditions.join(' AND ')}`;
   const sql = `
@@ -279,6 +284,39 @@ export function restore(db, id) {
 export function purge(db, id) {
   const result = db.prepare('DELETE FROM videos WHERE id = ? AND deleted_at IS NOT NULL').run(id);
   return result.changes > 0;
+}
+
+/**
+ * リンク切れチェックが必要な動画 (未チェック、または days 日以上前にチェック済み)。
+ * ゴミ箱に入っている動画は対象外。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} limit
+ * @param {number} [days]
+ * @returns {{ id: number, url: string }[]}
+ */
+export function findStaleLinkChecks(db, limit = 20, days = 7) {
+  const rows = db
+    .prepare(
+      `SELECT id, url FROM videos
+       WHERE deleted_at IS NULL
+         AND (link_checked_at IS NULL OR link_checked_at <= datetime('now', ?))
+       ORDER BY link_checked_at IS NOT NULL, link_checked_at ASC
+       LIMIT ?`
+    )
+    .all(`-${Math.floor(days)} days`, limit);
+  return rows.map((r) => ({ id: Number(r.id), url: String(r.url) }));
+}
+
+/**
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} id
+ * @param {'ok'|'broken'|'unknown'} status
+ */
+export function setLinkStatus(db, id, status) {
+  db.prepare('UPDATE videos SET link_status = ?, link_checked_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+    status,
+    id,
+  );
 }
 
 /**

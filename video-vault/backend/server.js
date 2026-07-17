@@ -32,6 +32,8 @@ import { extractMedia, extractMetadata } from './lib/extract.js';
 import { saveProxyEntry, getProxyEntry } from './lib/proxy-store.js';
 import { isAllowedOrigin } from './lib/origin-policy.js';
 import { csrfGuard } from './lib/csrf-mw.js';
+import { registerJob, startScheduler, getJobStatuses } from './lib/scheduler.js';
+import { checkLink } from './lib/link-checker.js';
 
 // ----------------------------------------------------- env validation (fail fast)
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -230,6 +232,7 @@ protectedRouter.get('/videos', (req, res) => {
   const ratingMin =
     ratingMinRaw !== undefined && ratingMinRaw !== '' ? Number(ratingMinRaw) : undefined;
   const unratedOnly = req.query.unrated === '1';
+  const brokenOnly = req.query.broken === '1';
 
   const filters = {
     q: q || undefined,
@@ -238,6 +241,7 @@ protectedRouter.get('/videos', (req, res) => {
     ratingExact: Number.isFinite(ratingExact) ? ratingExact : undefined,
     ratingMin: Number.isFinite(ratingMin) ? ratingMin : undefined,
     unratedOnly,
+    brokenOnly,
   };
   res.json({ videos: videosRepo.findAll(db, filters) });
 });
@@ -601,7 +605,57 @@ protectedRouter.delete('/history', (req, res) => {
   return successResponse(res, result);
 });
 
+// 定期ジョブの実行状況 (#19)。将来の管理画面(#32)向けにも使う想定。
+protectedRouter.get('/jobs', (_req, res) => {
+  return successResponse(res, { jobs: getJobStatuses() });
+});
+
 app.use('/api', protectedRouter);
+
+// ------------------------------------------------------------------ scheduled jobs (#19)
+// #15: サムネイル未取得の動画を自動で補完する。
+registerJob({
+  name: 'thumbnail-enrichment',
+  intervalMs: 10 * 60 * 1000, // 10分ごと
+  runOnStart: true,
+  async run() {
+    const targets = videosRepo.findMissingThumbnails(db, 20);
+    for (const t of targets) {
+      try {
+        const meta = await extractMetadata(t.url);
+        if (meta.thumbnail) videosRepo.setThumbnail(db, t.id, meta.thumbnail);
+      } catch {
+        // 個別失敗はスキップ (best effort)
+      }
+    }
+  },
+});
+
+// #8: 保存済み URL のリンク切れを検出する。
+registerJob({
+  name: 'link-rot-check',
+  intervalMs: 6 * 60 * 60 * 1000, // 6時間ごと
+  runOnStart: true,
+  async run() {
+    const targets = videosRepo.findStaleLinkChecks(db, 20, 7);
+    for (const t of targets) {
+      const status = await checkLink(t.url);
+      videosRepo.setLinkStatus(db, t.id, status);
+    }
+  },
+});
+
+// #10: ゴミ箱の期限切れエントリを自動パージする (trash 一覧アクセス時のパージと二重で保険)。
+registerJob({
+  name: 'trash-purge',
+  intervalMs: 60 * 60 * 1000, // 1時間ごと
+  runOnStart: false,
+  run() {
+    videosRepo.purgeExpiredTrash(db, 30);
+  },
+});
+
+startScheduler();
 
 // ------------------------------------------------------------------ start
 const PORT = Number(process.env.PORT || 3001);
