@@ -18,6 +18,8 @@ const SORT_LABEL: Record<SortKey, string> = {
   last_viewed_at: '最終視聴',
 };
 
+const PAGE_SIZE = 60; // #11
+
 type Tab = 'vault' | 'history' | 'trash' | 'gems';
 
 const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' };
@@ -45,25 +47,35 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
 
+  // #11: 無限スクロール
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
   // #9: 一括編集
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [bulkTagInput, setBulkTagInput] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  const buildFilters = (offset: number) => ({
+    q: query || undefined,
+    sort,
+    tag: activeTag ?? undefined,
+    ratingExact: typeof ratingFilter === 'number' ? ratingFilter : undefined,
+    unratedOnly: ratingFilter === 'unrated',
+    brokenOnly,
+    limit: PAGE_SIZE,
+    offset,
+  });
+
+  // 検索/フィルタ/並び替えが変わった時の「1ページ目からやり直す」ロード。
   const load = async () => {
     setError(null);
     try {
-      const filters = {
-        q: query || undefined,
-        sort,
-        tag: activeTag ?? undefined,
-        ratingExact: typeof ratingFilter === 'number' ? ratingFilter : undefined,
-        unratedOnly: ratingFilter === 'unrated',
-        brokenOnly,
-      };
-      const [v, t] = await Promise.all([fetchVideos(filters), fetchTags()]);
-      setVideos(v);
+      const [page, t] = await Promise.all([fetchVideos(buildFilters(0)), fetchTags()]);
+      setVideos(page.videos);
+      setHasMore(page.hasMore);
       setAllTags(t);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -75,6 +87,21 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
     }
   };
 
+  // #11: 無限スクロールで次ページを追記する。
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await fetchVideos(buildFilters(videos.length));
+      setVideos((prev) => [...prev, ...page.videos]);
+      setHasMore(page.hasMore);
+    } catch {
+      // 追加ロードの失敗は静かに諦める (最初のページは既に表示できている)
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => {
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
     debounceRef.current = window.setTimeout(load, 200);
@@ -83,6 +110,24 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, sort, activeTag, ratingFilter, brokenOnly]);
+
+  // #11: sentinel 要素が画面内に入ったら次ページを読み込む。
+  // loadMore は毎レンダー再生成されるので ref に逃がして常に最新版を呼ぶ。
+  const loadMoreRef = useRef(loadMore);
+  loadMoreRef.current = loadMore;
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || tab !== 'vault') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) void loadMoreRef.current();
+      },
+      { rootMargin: '400px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [tab, videos.length]);
 
   // 起動時に thumbnail_url が NULL の動画を server 側で og:image 補完する。
   // 補完できたら一覧をリロード。
@@ -194,7 +239,10 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center gap-4">
           <h1 className="text-xl font-semibold tracking-tight">
             Video Vault
-            <span className="ml-2 text-xs font-normal text-zinc-500">{videos.length} 件</span>
+            <span className="ml-2 text-xs font-normal text-zinc-500">
+              {videos.length}
+              {hasMore ? '+' : ''} 件
+            </span>
           </h1>
 
           <nav className="flex items-center gap-1 text-sm">
@@ -371,21 +419,29 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
           ) : videos.length === 0 ? (
             <EmptyState />
           ) : (
-            <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {videos.map((v) => (
-                <VideoCard
-                  key={v.id}
-                  video={v}
-                  onOpen={() => handleOpen(v)}
-                  onDelete={() => handleDelete(v)}
-                  onEdit={() => setEditing(v)}
-                  onTagClick={(t) => setActiveTag(t)}
-                  selectable={selectionMode}
-                  selected={selectedIds.has(v.id)}
-                  onToggleSelect={() => toggleSelected(v.id)}
-                />
-              ))}
-            </ul>
+            <>
+              <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {videos.map((v) => (
+                  <VideoCard
+                    key={v.id}
+                    video={v}
+                    onOpen={() => handleOpen(v)}
+                    onDelete={() => handleDelete(v)}
+                    onEdit={() => setEditing(v)}
+                    onTagClick={(t) => setActiveTag(t)}
+                    selectable={selectionMode}
+                    selected={selectedIds.has(v.id)}
+                    onToggleSelect={() => toggleSelected(v.id)}
+                  />
+                ))}
+              </ul>
+              {/* #11: 無限スクロール用センチネル。画面内に入ったら次ページを追記する。 */}
+              {hasMore && (
+                <div ref={sentinelRef} className="py-8 text-center text-xs text-zinc-500">
+                  {loadingMore ? '読み込み中…' : ''}
+                </div>
+              )}
+            </>
           )}
         </main>
       ) : tab === 'history' ? (

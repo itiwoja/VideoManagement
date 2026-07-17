@@ -94,6 +94,7 @@ npm run dev
 - 「選択」ボタン → 複数選択モード。チェックした動画へタグ一括付与 / 一括でゴミ箱へ移動
 - 上部の検索ボックスでタイトル / サイト名 / メモ / タグを横断検索 (3文字以上は全文検索、未満は部分一致)
 - 並び替え: 追加日 / 視聴回数 / 最終視聴
+- 60件ずつページ取得、下端までスクロールすると自動で次ページを読み込む (無限スクロール)
 - タグチップ: クリックでフィルタ ON / 同じタグを再クリックで OFF
 - 評価フィルタ: すべて / 未評価 / ★3+ / ★4+ / ★5
 - カードのタグもクリックでフィルタに乗る
@@ -123,7 +124,7 @@ npm run dev
 | Method | Path | 用途 |
 |---|---|---|
 | GET | `/api/health` | 死活確認 (認証不要) |
-| GET | `/api/videos?q=&sort=&tag=&rating_min=&unrated=1&broken=1` | 一覧 (フィルタ込み、`broken=1` でリンク切れのみ) |
+| GET | `/api/videos?q=&sort=&tag=&rating_min=&unrated=1&broken=1&limit=&offset=` | 一覧 (フィルタ込み、`broken=1` でリンク切れのみ)。既定 `limit=60`、応答は `{ videos, hasMore }` |
 | POST | `/api/videos` | 動画追加 (ゴミ箱内の同一 URL があれば復元扱い) |
 | PATCH | `/api/videos/:id` | `{ title?, rating?, note? }` の部分更新 |
 | POST | `/api/videos/:id/view` | 視聴カウント +1 + 履歴記録 |

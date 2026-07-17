@@ -43,4 +43,6 @@ export interface VideoFilters {
   ratingMin?: number;
   unratedOnly?: boolean;
   brokenOnly?: boolean;
+  limit?: number;
+  offset?: number;
 }

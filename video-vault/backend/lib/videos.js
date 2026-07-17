@@ -31,6 +31,8 @@ import { deleteCachedThumbnail } from './thumbnail-cache.js';
  * @property {number} [ratingMin]         この評価以上に絞り込み (互換維持)
  * @property {boolean} [unratedOnly]      true なら rating IS NULL のみ
  * @property {boolean} [brokenOnly]       true なら link_status = 'broken' のみ (#8)
+ * @property {number} [limit]             ページサイズ (#11)
+ * @property {number} [offset]            オフセット (#11)
  */
 
 const ALLOWED_SORT = new Set(['added_at', 'view_count', 'last_viewed_at']);
@@ -110,13 +112,24 @@ export function findAll(db, filters = {}) {
   }
 
   const where = `WHERE ${conditions.join(' AND ')}`;
+
+  // #11: ページネーション。limit+1 件取得して余りがあれば hasMore=true とし、
+  // 表示用には limit 件に切り詰める (COUNT(*) の別クエリを避けるための定石)。
+  const limit = Number.isInteger(filters.limit) && filters.limit > 0
+    ? Math.min(filters.limit, 200)
+    : 60;
+  const offset = Number.isInteger(filters.offset) && filters.offset >= 0 ? filters.offset : 0;
+
   const sql = `
     SELECT v.* FROM videos v
     ${where}
     ORDER BY v.${sort} IS NULL, v.${sort} DESC
+    LIMIT ? OFFSET ?
   `;
-  const rows = db.prepare(sql).all(...params);
-  return attachTags(db, rows);
+  const rows = db.prepare(sql).all(...params, limit + 1, offset);
+  const hasMore = rows.length > limit;
+  const page = hasMore ? rows.slice(0, limit) : rows;
+  return { videos: attachTags(db, page), hasMore };
 }
 
 /**

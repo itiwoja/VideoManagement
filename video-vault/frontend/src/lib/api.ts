@@ -39,7 +39,13 @@ function unwrap<T>(payload: Api<T>): T {
   return payload.data;
 }
 
-export async function fetchVideos(filters: VideoFilters = {}): Promise<Video[]> {
+export interface VideoPage {
+  videos: Video[];
+  hasMore: boolean;
+}
+
+/** #11: limit/offset によるページネーション。省略時は backend 側の既定 (60件)。 */
+export async function fetchVideos(filters: VideoFilters = {}): Promise<VideoPage> {
   const params = new URLSearchParams();
   if (filters.q) params.set('q', filters.q);
   if (filters.sort) params.set('sort', filters.sort);
@@ -51,9 +57,11 @@ export async function fetchVideos(filters: VideoFilters = {}): Promise<Video[]> 
   }
   if (filters.unratedOnly) params.set('unrated', '1');
   if (filters.brokenOnly) params.set('broken', '1');
+  if (typeof filters.limit === 'number') params.set('limit', String(filters.limit));
+  if (typeof filters.offset === 'number') params.set('offset', String(filters.offset));
 
-  const data = await getJson<{ videos: Video[] }>(`/api/videos?${params}`);
-  return data.videos;
+  const data = await getJson<{ videos: Video[]; hasMore: boolean }>(`/api/videos?${params}`);
+  return { videos: data.videos, hasMore: data.hasMore };
 }
 
 export async function recordView(id: number): Promise<Video | null> {

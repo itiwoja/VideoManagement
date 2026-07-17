@@ -241,6 +241,11 @@ protectedRouter.get('/videos', (req, res) => {
   const unratedOnly = req.query.unrated === '1';
   const brokenOnly = req.query.broken === '1';
 
+  const limitRaw = req.query.limit;
+  const limit = limitRaw !== undefined && limitRaw !== '' ? Number(limitRaw) : undefined;
+  const offsetRaw = req.query.offset;
+  const offset = offsetRaw !== undefined && offsetRaw !== '' ? Number(offsetRaw) : undefined;
+
   const filters = {
     q: q || undefined,
     sort,
@@ -249,8 +254,12 @@ protectedRouter.get('/videos', (req, res) => {
     ratingMin: Number.isFinite(ratingMin) ? ratingMin : undefined,
     unratedOnly,
     brokenOnly,
+    limit: Number.isInteger(limit) ? limit : undefined,
+    offset: Number.isInteger(offset) ? offset : undefined,
   };
-  res.json({ videos: videosRepo.findAll(db, filters) });
+  // #11: videos は既存互換のためトップレベルのまま、hasMore を並べて追加する。
+  const { videos, hasMore } = videosRepo.findAll(db, filters);
+  res.json({ videos, hasMore });
 });
 
 // 「埋もれ発掘」ビュー (#21): 未視聴 / 見返していない高評価動画。

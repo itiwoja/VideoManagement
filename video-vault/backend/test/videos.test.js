@@ -290,6 +290,46 @@ test('cleanup: purge the Japanese-titled search test video', async () => {
   assert.equal(purge.status, 200);
 });
 
+// #11: ページネーション。videoId 1件だけ残っている状態で追加投入して検証する。
+let pageVideoIds = [];
+
+test('setup: add 3 more videos for pagination tests', async () => {
+  for (let i = 0; i < 3; i++) {
+    const { json } = await fetchJson('/api/videos', withSession({
+      method: 'POST',
+      body: JSON.stringify({ url: `https://example.com/page-${i}`, title: `Page Test ${i}` }),
+    }));
+    pageVideoIds.push(json.video.id);
+  }
+});
+
+test('GET /api/videos?limit= caps the page size and reports hasMore', async () => {
+  // この時点で videoId (1件) + pageVideoIds (3件) = 4件以上ある
+  const { json } = await fetchJson('/api/videos?limit=2', withSession());
+  assert.equal(json.videos.length, 2);
+  assert.equal(json.hasMore, true);
+});
+
+test('GET /api/videos?limit=&offset= pages through results without gaps or dupes', async () => {
+  const page1 = await fetchJson('/api/videos?limit=2&offset=0&sort=added_at', withSession());
+  const page2 = await fetchJson('/api/videos?limit=2&offset=2&sort=added_at', withSession());
+  const ids1 = page1.json.videos.map((v) => v.id);
+  const ids2 = page2.json.videos.map((v) => v.id);
+  assert.equal(new Set([...ids1, ...ids2]).size, ids1.length + ids2.length); // 重複なし
+});
+
+test('GET /api/videos without limit/offset defaults to hasMore=false when everything fits', async () => {
+  const { json } = await fetchJson('/api/videos', withSession());
+  assert.equal(json.hasMore, false); // デフォルト limit=60 に対しテストデータは十分少ない
+});
+
+test('cleanup: purge pagination test videos', async () => {
+  for (const id of pageVideoIds) {
+    await fetchJson(`/api/videos/${id}`, withSession({ method: 'DELETE' }));
+    await fetchJson(`/api/videos/${id}/purge`, withSession({ method: 'DELETE' }));
+  }
+});
+
 test('POST /api/videos/:id/suggest-tags returns [] when ANTHROPIC_API_KEY is unset (no crash, no 500)', async () => {
   // このテストプロセスには ANTHROPIC_API_KEY を渡していないので、tagSuggest.suggestTags()
   // は API 呼び出しをせずに即 [] を返すはず。保存/取得フローを壊さないことの確認。
