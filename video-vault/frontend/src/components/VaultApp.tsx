@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SortKey, Tag, Video } from '../types';
-import { deleteVideo, enrichMissingThumbnails, fetchTags, fetchVideos, recordView } from '../lib/api';
+import { attachTag, deleteVideo, enrichMissingThumbnails, fetchTags, fetchVideos, recordView } from '../lib/api';
 import { logout } from '../lib/auth';
 import type { Theme } from '../lib/theme';
 import { VideoCard } from './VideoCard';
@@ -44,6 +44,12 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
+
+  // #9: 一括編集
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkTagInput, setBulkTagInput] = useState('');
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const load = async () => {
     setError(null);
@@ -139,6 +145,49 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
     onLoggedOut();
   };
 
+  // #9: 一括編集
+  const toggleSelectionMode = () => {
+    setSelectionMode((prev) => !prev);
+    setSelectedIds(new Set());
+    setBulkTagInput('');
+  };
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleBulkTag = async () => {
+    const name = bulkTagInput.trim();
+    if (name.length === 0 || selectedIds.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => attachTag(id, name)));
+      setBulkTagInput('');
+      await load();
+      void fetchTags().then(setAllTags).catch(() => {});
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    if (!confirm(`選択した ${selectedIds.size} 件をゴミ箱に移動しますか?`)) return;
+    setBulkBusy(true);
+    try {
+      await Promise.all([...selectedIds].map((id) => deleteVideo(id)));
+      setVideos((prev) => prev.filter((v) => !selectedIds.has(v.id)));
+      setSelectedIds(new Set());
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
   return (
     <div className="min-h-screen text-zinc-900 dark:text-zinc-100">
       <header className="sticky top-0 z-10 backdrop-blur bg-zinc-50/80 dark:bg-zinc-950/80 border-b border-zinc-200 dark:border-zinc-800">
@@ -205,6 +254,21 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
             </button>
           )}
 
+          {tab === 'vault' && (
+            <button
+              type="button"
+              onClick={toggleSelectionMode}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                selectionMode
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-500'
+                  : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900'
+              }`}
+              title="複数選択してタグ一括付与・一括削除 (#9)"
+            >
+              {selectionMode ? '選択終了' : '選択'}
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setTheme(THEME_CYCLE[theme])}
@@ -244,6 +308,53 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
                 ))}
               </div>
             )}
+            {selectionMode && (
+              <div className="max-w-7xl mx-auto px-6 pb-3 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-zinc-500 dark:text-zinc-400">{selectedIds.size} 件選択中</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set(videos.map((v) => v.id)))}
+                  className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
+                >
+                  すべて選択
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedIds(new Set())}
+                  className="px-2 py-1 rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100"
+                >
+                  選択解除
+                </button>
+                <input
+                  type="text"
+                  value={bulkTagInput}
+                  onChange={(e) => setBulkTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleBulkTag();
+                  }}
+                  placeholder="タグ名"
+                  disabled={selectedIds.size === 0 || bulkBusy}
+                  className="w-32 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded px-2 py-1
+                             focus:outline-none focus:border-zinc-600 disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleBulkTag()}
+                  disabled={selectedIds.size === 0 || bulkTagInput.trim().length === 0 || bulkBusy}
+                  className="px-2 py-1 rounded bg-indigo-600 text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  タグ追加
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleBulkDelete()}
+                  disabled={selectedIds.size === 0 || bulkBusy}
+                  className="px-2 py-1 rounded bg-red-100 dark:bg-red-950 text-red-700 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ゴミ箱へ
+                </button>
+              </div>
+            )}
           </>
         )}
       </header>
@@ -269,6 +380,9 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
                   onDelete={() => handleDelete(v)}
                   onEdit={() => setEditing(v)}
                   onTagClick={(t) => setActiveTag(t)}
+                  selectable={selectionMode}
+                  selected={selectedIds.has(v.id)}
+                  onToggleSelect={() => toggleSelected(v.id)}
                 />
               ))}
             </ul>

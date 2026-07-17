@@ -7,6 +7,10 @@ interface VideoCardProps {
   onDelete: () => void;
   onEdit: () => void;
   onTagClick?: (tag: string) => void;
+  /** #9: 一括編集モード。true の間はクリックで選択トグル、再生は開かない。 */
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelect?: () => void;
 }
 
 function formatDuration(raw: string | null): string | null {
@@ -30,19 +34,45 @@ function formatDate(iso: string | null): string {
   });
 }
 
-export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: VideoCardProps) {
+export function VideoCard({
+  video,
+  onOpen,
+  onDelete,
+  onEdit,
+  onTagClick,
+  selectable = false,
+  selected = false,
+  onToggleSelect,
+}: VideoCardProps) {
   const dur = formatDuration(video.duration);
   const visibleTags = video.tags.slice(0, 3);
   const moreTagsCount = video.tags.length - visibleTags.length;
 
   return (
-    <li className="group rounded-xl overflow-hidden bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
+    <li
+      className={`group rounded-xl overflow-hidden bg-white dark:bg-zinc-900 border transition-colors ${
+        selected
+          ? 'border-indigo-500 dark:border-indigo-400 ring-2 ring-indigo-500/40 dark:ring-indigo-400/40'
+          : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700'
+      }`}
+    >
       <button
-        onClick={onOpen}
+        onClick={selectable ? onToggleSelect : onOpen}
         className="block w-full text-left"
-        title="クリックでアプリ内プレイヤーを開く（視聴回数 +1）"
+        title={selectable ? 'クリックで選択' : 'クリックでアプリ内プレイヤーを開く（視聴回数 +1）'}
       >
         <div className="relative aspect-video bg-zinc-200 dark:bg-zinc-800">
+          {selectable && (
+            <span
+              className={`absolute z-10 top-2 left-2 w-5 h-5 rounded border flex items-center justify-center text-xs ${
+                selected
+                  ? 'bg-indigo-600 border-indigo-600 text-white'
+                  : 'bg-black/50 border-zinc-400'
+              }`}
+            >
+              {selected ? '✓' : ''}
+            </span>
+          )}
           {video.thumbnail_url ? (
             <img
               src={video.thumbnail_url}
@@ -64,7 +94,11 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
               {dur}
             </span>
           )}
-          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] uppercase tracking-wide text-zinc-300">
+          <span
+            className={`absolute top-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] uppercase tracking-wide text-zinc-300 ${
+              selectable ? 'left-9' : 'left-2'
+            }`}
+          >
             {video.site}
           </span>
           {video.link_status === 'broken' && (
