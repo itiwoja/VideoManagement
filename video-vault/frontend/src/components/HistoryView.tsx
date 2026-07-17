@@ -58,8 +58,8 @@ export function HistoryView() {
               onClick={() => setDays(d)}
               className={`px-2.5 py-1 rounded transition-colors ${
                 days === d
-                  ? 'bg-zinc-100 text-zinc-900'
-                  : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-100'
+                  ? 'bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
               {d === 0 ? '全期間' : `直近${d}日`}
@@ -77,7 +77,7 @@ export function HistoryView() {
       </div>
 
       {error && (
-        <div className="rounded bg-red-950/40 border border-red-900 text-red-200 text-xs p-2">
+        <div className="rounded bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs p-2">
           {error}
         </div>
       )}
@@ -93,7 +93,7 @@ export function HistoryView() {
               <button
                 type="button"
                 onClick={() => handleOpen(e)}
-                className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-zinc-900 transition-colors"
+                className="w-full text-left flex items-center gap-3 p-2 rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-900 transition-colors"
               >
                 <span className="font-mono text-[10px] text-zinc-500 w-32 shrink-0">
                   {formatHistoryDate(e.viewed_at)}
@@ -103,16 +103,16 @@ export function HistoryView() {
                     src={e.thumbnail_url}
                     alt=""
                     referrerPolicy="no-referrer"
-                    className="w-16 aspect-video object-cover rounded shrink-0 border border-zinc-800"
+                    className="w-16 aspect-video object-cover rounded shrink-0 border border-zinc-200 dark:border-zinc-800"
                     onError={(ev) => {
                       (ev.currentTarget as HTMLImageElement).style.display = 'none';
                     }}
                   />
                 ) : (
-                  <span className="w-16 aspect-video rounded bg-zinc-900 border border-zinc-800 shrink-0" />
+                  <span className="w-16 aspect-video rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shrink-0" />
                 )}
                 <div className="min-w-0">
-                  <p className="text-sm text-zinc-100 line-clamp-1">{e.title}</p>
+                  <p className="text-sm text-zinc-900 dark:text-zinc-100 line-clamp-1">{e.title}</p>
                   <p className="text-[11px] text-zinc-500">{e.site}</p>
                 </div>
               </button>

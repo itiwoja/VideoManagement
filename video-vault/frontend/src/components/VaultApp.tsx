@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SortKey, Tag, Video } from '../types';
 import { deleteVideo, enrichMissingThumbnails, fetchTags, fetchVideos, recordView } from '../lib/api';
 import { logout } from '../lib/auth';
+import type { Theme } from '../lib/theme';
 import { VideoCard } from './VideoCard';
 import { AddVideoDialog } from './AddVideoDialog';
 import { EditVideoDialog } from './EditVideoDialog';
@@ -18,11 +19,16 @@ const SORT_LABEL: Record<SortKey, string> = {
 
 type Tab = 'vault' | 'history' | 'trash';
 
+const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' };
+const THEME_LABEL: Record<Theme, string> = { light: '☀️ light', dark: '🌙 dark', system: '🖥️ system' };
+
 interface VaultAppProps {
   onLoggedOut: () => void;
+  theme: Theme;
+  setTheme: (next: Theme) => void;
 }
 
-export function VaultApp({ onLoggedOut }: VaultAppProps) {
+export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
   const [tab, setTab] = useState<Tab>('vault');
   const [videos, setVideos] = useState<Video[]>([]);
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -131,8 +137,8 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
   };
 
   return (
-    <div className="min-h-screen text-zinc-100">
-      <header className="sticky top-0 z-10 backdrop-blur bg-zinc-950/80 border-b border-zinc-800">
+    <div className="min-h-screen text-zinc-900 dark:text-zinc-100">
+      <header className="sticky top-0 z-10 backdrop-blur bg-zinc-50/80 dark:bg-zinc-950/80 border-b border-zinc-200 dark:border-zinc-800">
         <div className="max-w-7xl mx-auto px-6 py-4 flex flex-wrap items-center gap-4">
           <h1 className="text-xl font-semibold tracking-tight">
             Video Vault
@@ -159,7 +165,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="タイトル・サイト名で検索"
-                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2 text-sm
+                  className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg px-4 py-2 text-sm
                              focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600"
                 />
               </div>
@@ -170,8 +176,8 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
                     onClick={() => setSort(k)}
                     className={`px-3 py-1.5 rounded-md transition-colors ${
                       sort === k
-                        ? 'bg-zinc-100 text-zinc-900'
-                        : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
+                        ? 'bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                        : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900'
                     }`}
                   >
                     {SORT_LABEL[k]}
@@ -185,8 +191,8 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
             <button
               type="button"
               onClick={() => setAdding(true)}
-              className="px-3 py-1.5 rounded-md bg-zinc-100 text-zinc-900 text-sm font-medium
-                         hover:bg-zinc-300 transition-colors"
+              className="px-3 py-1.5 rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 text-sm font-medium
+                         hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
               title="URL を貼り付けて動画を追加"
             >
               + 追加
@@ -195,8 +201,17 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
 
           <button
             type="button"
+            onClick={() => setTheme(THEME_CYCLE[theme])}
+            className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+            title="テーマ切替 (light → dark → system)"
+          >
+            {THEME_LABEL[theme]}
+          </button>
+
+          <button
+            type="button"
             onClick={handleLogout}
-            className="text-xs text-zinc-500 hover:text-zinc-100 transition-colors"
+            className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
             title="ログアウト"
           >
             🔒 logout
@@ -215,7 +230,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
             {sites.length > 0 && (
               <div className="max-w-7xl mx-auto px-6 pb-3 flex flex-wrap gap-2 text-xs text-zinc-500">
                 {sites.map((s) => (
-                  <span key={s} className="px-2 py-0.5 rounded bg-zinc-900 border border-zinc-800">
+                  <span key={s} className="px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800">
                     {s}
                   </span>
                 ))}
@@ -228,7 +243,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
       {tab === 'vault' ? (
         <main className="max-w-7xl mx-auto px-6 py-6">
           {error && (
-            <div className="mb-4 p-3 rounded-md bg-red-950/40 border border-red-900 text-red-200 text-sm">
+            <div className="mb-4 p-3 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-sm">
               読み込み失敗: {error}
             </div>
           )}
@@ -277,8 +292,8 @@ function TabButton({ active, children, onClick }: TabButtonProps) {
       onClick={onClick}
       className={`px-3 py-1.5 rounded-md text-sm transition-colors ${
         active
-          ? 'bg-zinc-100 text-zinc-900'
-          : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900'
+          ? 'bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+          : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-900'
       }`}
     >
       {children}

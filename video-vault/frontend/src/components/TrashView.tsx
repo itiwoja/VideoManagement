@@ -41,7 +41,7 @@ export function TrashView() {
       </p>
 
       {error && (
-        <div className="rounded bg-red-950/40 border border-red-900 text-red-200 text-xs p-2">
+        <div className="rounded bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs p-2">
           {error}
         </div>
       )}
@@ -55,23 +55,23 @@ export function TrashView() {
           {videos.map((v) => (
             <li
               key={v.id}
-              className="flex items-center gap-3 p-2 rounded-md border border-zinc-800 bg-zinc-900/50"
+              className="flex items-center gap-3 p-2 rounded-md border border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/50"
             >
               {v.thumbnail_url ? (
                 <img
                   src={v.thumbnail_url}
                   alt=""
                   referrerPolicy="no-referrer"
-                  className="w-16 aspect-video object-cover rounded shrink-0 border border-zinc-800 opacity-60"
+                  className="w-16 aspect-video object-cover rounded shrink-0 border border-zinc-200 dark:border-zinc-800 opacity-60"
                   onError={(ev) => {
                     (ev.currentTarget as HTMLImageElement).style.display = 'none';
                   }}
                 />
               ) : (
-                <span className="w-16 aspect-video rounded bg-zinc-900 border border-zinc-800 shrink-0" />
+                <span className="w-16 aspect-video rounded bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shrink-0" />
               )}
               <div className="min-w-0 flex-1">
-                <p className="text-sm text-zinc-300 line-clamp-1">{v.title}</p>
+                <p className="text-sm text-zinc-700 dark:text-zinc-300 line-clamp-1">{v.title}</p>
                 <p className="text-[11px] text-zinc-500">
                   {v.site} ・ 削除日 {formatDate(v.deleted_at)}
                 </p>
@@ -79,14 +79,14 @@ export function TrashView() {
               <button
                 type="button"
                 onClick={() => handleRestore(v)}
-                className="shrink-0 text-xs px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 transition-colors"
+                className="shrink-0 text-xs px-2.5 py-1 rounded bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-800 dark:text-zinc-200 transition-colors"
               >
                 復元
               </button>
               <button
                 type="button"
                 onClick={() => handlePurge(v)}
-                className="shrink-0 text-xs px-2.5 py-1 rounded bg-red-950 hover:bg-red-900 text-red-200 transition-colors"
+                className="shrink-0 text-xs px-2.5 py-1 rounded bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-950 dark:hover:bg-red-900 dark:text-red-200 transition-colors"
               >
                 完全に削除
               </button>

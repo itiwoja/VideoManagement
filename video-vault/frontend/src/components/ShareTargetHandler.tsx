@@ -60,20 +60,20 @@ export function ShareTargetHandler({ url, title, onDone }: ShareTargetHandlerPro
   }, [url, title, onDone]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 text-zinc-100">
-      <div className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 p-6 space-y-3">
+    <div className="min-h-screen flex items-center justify-center px-4 text-zinc-900 dark:text-zinc-100">
+      <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 space-y-3">
         <h1 className="text-base font-semibold">
           {status === 'sending' && '保存中…'}
           {status === 'ok' && '✅ Vault に追加'}
           {status === 'duplicate' && 'ℹ️ 既に登録済み'}
           {status === 'error' && '⚠️ 保存失敗'}
         </h1>
-        <p className="text-xs text-zinc-400 break-all leading-relaxed">{url}</p>
-        {message && <p className="text-xs text-zinc-300">{message}</p>}
+        <p className="text-xs text-zinc-500 dark:text-zinc-400 break-all leading-relaxed">{url}</p>
+        {message && <p className="text-xs text-zinc-700 dark:text-zinc-300">{message}</p>}
         <button
           type="button"
           onClick={onDone}
-          className="w-full mt-2 py-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm"
+          className="w-full mt-2 py-2 rounded-md bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-sm"
         >
           閉じる
         </button>

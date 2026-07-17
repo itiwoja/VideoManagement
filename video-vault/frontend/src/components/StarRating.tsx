@@ -18,7 +18,7 @@ export function StarRating({ value, onChange, readOnly, size = 'sm' }: StarRatin
     <div className={`inline-flex items-center gap-0.5 ${SIZE_CLASS[size]}`}>
       {stars.map((s) => {
         const filled = value !== null && s <= value;
-        const baseClass = filled ? 'text-amber-400' : 'text-zinc-700';
+        const baseClass = filled ? 'text-amber-400' : 'text-zinc-300 dark:text-zinc-700';
         if (readOnly || !onChange) {
           return (
             <span key={s} className={baseClass} aria-hidden="true">

@@ -43,8 +43,8 @@ export function TagFilterBar({
           onClick={() => onTagChange(null)}
           className={`px-2 py-0.5 rounded transition-colors ${
             activeTag === null
-              ? 'bg-zinc-100 text-zinc-900'
-              : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-100'
+              ? 'bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+              : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
           }`}
         >
           ALL
@@ -58,8 +58,8 @@ export function TagFilterBar({
               onClick={() => onTagChange(active ? null : t.name)}
               className={`px-2 py-0.5 rounded transition-colors ${
                 active
-                  ? 'bg-zinc-100 text-zinc-900'
-                  : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-100'
+                  ? 'bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900'
+                  : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
               }`}
             >
               #{t.name}
@@ -90,7 +90,7 @@ function RatingButtons({ value, onChange }: RatingButtonsProps) {
             className={`px-2 py-0.5 rounded transition-colors ${
               active
                 ? 'bg-amber-400 text-zinc-900'
-                : 'bg-zinc-900 text-zinc-400 border border-zinc-800 hover:text-zinc-100'
+                : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
             }`}
           >
             {label}

@@ -72,16 +72,16 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
       onClick={() => onClose(null)}
     >
       <div
-        className="w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-lg shadow-2xl"
+        className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-800">
-          <h2 className="text-base font-medium text-zinc-100">動画を追加</h2>
+        <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
+          <h2 className="text-base font-medium text-zinc-900 dark:text-zinc-100">動画を追加</h2>
           <button
             type="button"
             aria-label="閉じる"
             onClick={() => onClose(null)}
-            className="text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-100 hover:bg-zinc-800"
+            className="text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
             ×
           </button>
@@ -89,7 +89,7 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
 
         <form onSubmit={(e) => void handleSubmit(e)} className="px-5 py-4 space-y-4">
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5" htmlFor="add-url">
+            <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5" htmlFor="add-url">
               URL <span className="text-red-400">*</span>
             </label>
             <div className="flex gap-2">
@@ -102,7 +102,7 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
                 onChange={(e) => setUrl(e.target.value)}
                 placeholder="https://..."
                 disabled={state.loading}
-                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-100
+                className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100
                            focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600
                            disabled:opacity-50"
               />
@@ -110,7 +110,7 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
                 type="button"
                 onClick={() => void handlePasteFromClipboard()}
                 disabled={state.loading}
-                className="px-3 py-2 text-xs rounded-md bg-zinc-800 text-zinc-300 hover:bg-zinc-700 hover:text-zinc-100 disabled:opacity-50"
+                className="px-3 py-2 text-xs rounded-md bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
                 title="クリップボードから貼り付け"
               >
                 📋 貼付
@@ -122,7 +122,7 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
           </div>
 
           <div>
-            <label className="block text-xs text-zinc-400 mb-1.5" htmlFor="add-title">
+            <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5" htmlFor="add-title">
               タイトル <span className="text-zinc-600">(任意 — 自動取得を上書き)</span>
             </label>
             <input
@@ -132,14 +132,14 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
               onChange={(e) => setTitle(e.target.value)}
               placeholder="自動取得に任せるなら空欄でOK"
               disabled={state.loading}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-100
+              className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100
                          focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600
                          disabled:opacity-50"
             />
           </div>
 
           {state.error && (
-            <div className="p-2.5 rounded-md bg-red-950/40 border border-red-900 text-red-200 text-xs">
+            <div className="p-2.5 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs">
               {state.error}
             </div>
           )}
@@ -149,15 +149,15 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
               type="button"
               onClick={() => onClose(null)}
               disabled={state.loading}
-              className="px-4 py-2 text-sm rounded-md text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+              className="px-4 py-2 text-sm rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
             >
               キャンセル
             </button>
             <button
               type="submit"
               disabled={state.loading || !url.trim()}
-              className="px-4 py-2 text-sm rounded-md bg-zinc-100 text-zinc-900 font-medium
-                         hover:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 text-sm rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 font-medium
+                         hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {state.loading ? '登録中…' : '登録'}
             </button>

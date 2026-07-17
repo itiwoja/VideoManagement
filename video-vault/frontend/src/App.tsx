@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getAuthState, type AuthState } from './lib/auth';
+import { useTheme } from './lib/theme';
 import { AuthScreen } from './components/AuthScreen';
 import { VaultApp } from './components/VaultApp';
 import { ShareTargetHandler } from './components/ShareTargetHandler';
@@ -33,6 +34,9 @@ function extractUrlFromText(text: string | null): string | null {
 }
 
 export default function App() {
+  // 認証画面でも system 設定の変化に追従できるよう、アプリ最上位で無条件に呼ぶ
+  // (VaultApp 配下に置くと未ログイン中は購読されない)
+  const { theme, setTheme } = useTheme();
   const [auth, setAuth] = useState<AuthState | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [shareIntent, setShareIntent] = useState<ShareIntent | null>(() => readShareIntent());
@@ -54,10 +58,10 @@ export default function App() {
 
   if (authError) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-zinc-100 px-4">
-        <div className="rounded bg-red-950/40 border border-red-900 text-red-200 text-sm p-3 max-w-md">
+      <div className="min-h-screen flex items-center justify-center text-zinc-900 dark:text-zinc-100 px-4">
+        <div className="rounded bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-sm p-3 max-w-md">
           backend 接続失敗: {authError}
-          <div className="mt-1 text-xs text-red-300/80">
+          <div className="mt-1 text-xs text-red-600/80 dark:text-red-300/80">
             backend (port 3001) が起動しているか確認してください。
           </div>
         </div>
@@ -91,5 +95,5 @@ export default function App() {
     );
   }
 
-  return <VaultApp onLoggedOut={refreshAuth} />;
+  return <VaultApp onLoggedOut={refreshAuth} theme={theme} setTheme={setTheme} />;
 }

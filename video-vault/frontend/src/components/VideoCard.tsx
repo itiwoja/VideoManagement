@@ -36,13 +36,13 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
   const moreTagsCount = video.tags.length - visibleTags.length;
 
   return (
-    <li className="group rounded-xl overflow-hidden bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors">
+    <li className="group rounded-xl overflow-hidden bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 transition-colors">
       <button
         onClick={onOpen}
         className="block w-full text-left"
         title="クリックでアプリ内プレイヤーを開く（視聴回数 +1）"
       >
-        <div className="relative aspect-video bg-zinc-800">
+        <div className="relative aspect-video bg-zinc-200 dark:bg-zinc-800">
           {video.thumbnail_url ? (
             <img
               src={video.thumbnail_url}
@@ -77,7 +77,7 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
           )}
         </div>
         <div className="p-3 space-y-2">
-          <h3 className="text-sm font-medium leading-snug line-clamp-2 text-zinc-100">
+          <h3 className="text-sm font-medium leading-snug line-clamp-2 text-zinc-900 dark:text-zinc-100">
             {video.title}
           </h3>
 
@@ -100,7 +100,7 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
                 e.stopPropagation();
                 onTagClick?.(t);
               }}
-              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+              className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
             >
               #{t}
             </button>
@@ -118,7 +118,7 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
             e.stopPropagation();
             onEdit();
           }}
-          className="text-xs text-zinc-500 hover:text-zinc-100 transition-colors"
+          className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
         >
           編集
         </button>

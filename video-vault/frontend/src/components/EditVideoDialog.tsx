@@ -115,14 +115,14 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
       onClick={() => onClose(video)}
     >
       <div
-        className="w-full max-w-lg rounded-2xl bg-zinc-900 border border-zinc-800 p-5 space-y-4"
+        className="w-full max-w-lg rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-5 space-y-4"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between">
           <h2 className="text-base font-semibold">編集</h2>
           <button
             type="button"
-            className="text-zinc-500 hover:text-zinc-100"
+            className="text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100"
             onClick={() => onClose(video)}
             aria-label="閉じる"
           >
@@ -131,7 +131,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
         </header>
 
         {error && (
-          <div className="rounded bg-red-950/40 border border-red-900 text-red-200 text-xs p-2">
+          <div className="rounded bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs p-2">
             {error}
           </div>
         )}
@@ -141,7 +141,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
             defaultValue={video.title}
             rows={2}
             onBlur={(e) => saveTitle(e.target.value.trim())}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm
                        focus:outline-none focus:border-zinc-600 resize-none"
           />
           {savingField === 'title' && <Saving />}
@@ -158,7 +158,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
             rows={3}
             placeholder="この動画のメモ（任意）"
             onBlur={(e) => saveNote(e.target.value.trim())}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm
                        focus:outline-none focus:border-zinc-600 resize-none"
           />
           {savingField === 'note' && <Saving />}
@@ -170,7 +170,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
               {video.tags.map((t) => (
                 <span
                   key={t}
-                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-zinc-800 text-zinc-200"
+                  className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200"
                 >
                   #{t}
                   <button
@@ -199,7 +199,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
                 }
               }}
               placeholder="タグを追加（Enterで確定）"
-              className="flex-1 bg-zinc-950 border border-zinc-800 rounded-md px-3 py-1.5 text-sm
+              className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-1.5 text-sm
                          focus:outline-none focus:border-zinc-600"
             />
             <datalist id="all-tag-names">
@@ -211,7 +211,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
               type="button"
               onClick={addTag}
               disabled={tagInput.trim().length === 0}
-              className="px-3 py-1.5 rounded-md bg-zinc-100 text-zinc-900 text-sm hover:bg-zinc-300
+              className="px-3 py-1.5 rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 text-sm hover:bg-zinc-700 dark:hover:bg-zinc-300
                          disabled:opacity-40 disabled:cursor-not-allowed"
             >
               追加
@@ -224,7 +224,7 @@ export function EditVideoDialog({ video: initial, onClose }: EditVideoDialogProp
           <button
             type="button"
             onClick={() => onClose(video)}
-            className="w-full py-2 rounded-md bg-zinc-800 hover:bg-zinc-700 text-sm"
+            className="w-full py-2 rounded-md bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-sm"
           >
             閉じる
           </button>

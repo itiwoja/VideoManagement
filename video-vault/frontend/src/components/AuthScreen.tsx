@@ -45,10 +45,10 @@ export function AuthScreen({ isSetup, onSuccess }: AuthScreenProps) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 text-zinc-100">
+    <div className="min-h-screen flex items-center justify-center px-4 text-zinc-900 dark:text-zinc-100">
       <form
         onSubmit={submit}
-        className="w-full max-w-sm rounded-2xl bg-zinc-900 border border-zinc-800 p-6 space-y-4"
+        className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-6 space-y-4"
       >
         <h1 className="text-lg font-semibold tracking-tight">
           {isSetup ? '初回パスワードを設定' : 'パスワードを入力'}
@@ -74,7 +74,7 @@ export function AuthScreen({ isSetup, onSuccess }: AuthScreenProps) {
             required
             minLength={isSetup ? 8 : 1}
             maxLength={128}
-            className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm
                        focus:outline-none focus:border-zinc-600"
             autoComplete={isSetup ? 'new-password' : 'current-password'}
           />
@@ -92,7 +92,7 @@ export function AuthScreen({ isSetup, onSuccess }: AuthScreenProps) {
               required
               minLength={8}
               maxLength={128}
-              className="w-full bg-zinc-950 border border-zinc-800 rounded-md px-3 py-2 text-sm
+              className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm
                          focus:outline-none focus:border-zinc-600"
               autoComplete="new-password"
             />
@@ -100,7 +100,7 @@ export function AuthScreen({ isSetup, onSuccess }: AuthScreenProps) {
         )}
 
         {error && (
-          <div className="rounded bg-red-950/40 border border-red-900 text-red-200 text-xs p-2">
+          <div className="rounded bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs p-2">
             {error}
           </div>
         )}
@@ -108,8 +108,8 @@ export function AuthScreen({ isSetup, onSuccess }: AuthScreenProps) {
         <button
           type="submit"
           disabled={busy || password.length < 1}
-          className="w-full py-2 rounded-md bg-zinc-100 text-zinc-900 text-sm font-medium
-                     hover:bg-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="w-full py-2 rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 text-sm font-medium
+                     hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {busy ? '送信中…' : isSetup ? '設定する' : 'ログイン'}
         </button>
