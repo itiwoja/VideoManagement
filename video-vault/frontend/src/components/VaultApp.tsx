@@ -7,6 +7,7 @@ import { AddVideoDialog } from './AddVideoDialog';
 import { EditVideoDialog } from './EditVideoDialog';
 import { TagFilterBar, type RatingFilter } from './TagFilterBar';
 import { HistoryView } from './HistoryView';
+import { TrashView } from './TrashView';
 import { VideoPlayer } from './VideoPlayer';
 
 const SORT_LABEL: Record<SortKey, string> = {
@@ -15,7 +16,7 @@ const SORT_LABEL: Record<SortKey, string> = {
   last_viewed_at: '最終視聴',
 };
 
-type Tab = 'vault' | 'history';
+type Tab = 'vault' | 'history' | 'trash';
 
 interface VaultAppProps {
   onLoggedOut: () => void;
@@ -97,7 +98,7 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
   };
 
   const handleDelete = async (v: Video) => {
-    if (!confirm(`削除しますか?\n${v.title}`)) return;
+    if (!confirm(`ゴミ箱に移動しますか?(30日後に自動で完全削除されます)\n${v.title}`)) return;
     const ok = await deleteVideo(v.id);
     if (ok) setVideos((prev) => prev.filter((x) => x.id !== v.id));
   };
@@ -144,6 +145,9 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
             </TabButton>
             <TabButton active={tab === 'history'} onClick={() => setTab('history')}>
               履歴
+            </TabButton>
+            <TabButton active={tab === 'trash'} onClick={() => setTab('trash')}>
+              ゴミ箱
             </TabButton>
           </nav>
 
@@ -247,8 +251,10 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
             </ul>
           )}
         </main>
-      ) : (
+      ) : tab === 'history' ? (
         <HistoryView />
+      ) : (
+        <TrashView />
       )}
 
       {adding && <AddVideoDialog onClose={handleAddClose} />}

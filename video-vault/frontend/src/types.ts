@@ -11,6 +11,7 @@ export interface Video {
   rating: number | null;
   note: string | null;
   tags: string[];
+  deleted_at?: string | null;
 }
 
 export interface Tag {

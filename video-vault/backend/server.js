@@ -518,12 +518,36 @@ protectedRouter.post('/videos/:id/view', (req, res) => {
   res.json({ video: result.video });
 });
 
+// #10: 物理削除ではなくゴミ箱に移動する(論理削除)。
 protectedRouter.delete('/videos/:id', (req, res) => {
   const id = parseId(req.params.id);
   if (id === null) return res.status(400).json({ error: 'invalid id' });
   const ok = videosRepo.remove(db, id);
   if (!ok) return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
+});
+
+// ゴミ箱一覧。呼び出しのたびに 30 日超過分を自動パージする (best-effort)。
+protectedRouter.get('/videos/trash', (_req, res) => {
+  videosRepo.purgeExpiredTrash(db, 30);
+  return successResponse(res, { videos: videosRepo.findTrash(db) });
+});
+
+protectedRouter.post('/videos/:id/restore', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
+  const video = videosRepo.restore(db, id);
+  if (!video) return errorResponse(res, 404, 'not found in trash');
+  return successResponse(res, { video });
+});
+
+// ゴミ箱からの完全削除(元に戻せない)。ゴミ箱に入っている動画のみ対象。
+protectedRouter.delete('/videos/:id/purge', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
+  const ok = videosRepo.purge(db, id);
+  if (!ok) return errorResponse(res, 404, 'not found in trash');
+  return successResponse(res, { purged: true });
 });
 
 // ------------------------------------------------------------------ protected: tags

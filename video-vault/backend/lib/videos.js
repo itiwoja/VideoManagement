@@ -88,7 +88,10 @@ export function findAll(db, filters = {}) {
     params.push(filters.ratingMin);
   }
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  // ゴミ箱に入っている(deleted_at IS NOT NULL)動画は通常一覧には出さない (#10)
+  conditions.push('v.deleted_at IS NULL');
+
+  const where = `WHERE ${conditions.join(' AND ')}`;
   const sql = `
     SELECT v.* FROM videos v
     ${where}
@@ -129,6 +132,12 @@ export function create(db, input) {
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       const existing = db.prepare('SELECT * FROM videos WHERE url = ?').get(url);
+      // ゴミ箱に入っていた動画を再度保存しようとした場合は、複製ではなく復元として扱う (#10)
+      if (existing.deleted_at !== null) {
+        db.prepare('UPDATE videos SET deleted_at = NULL WHERE id = ?').run(existing.id);
+        const video = findById(db, existing.id);
+        return { video, created: false, duplicate: false, restored: true };
+      }
       const video = attachTags(db, [existing])[0];
       return { video, created: false, duplicate: true };
     }
@@ -222,11 +231,65 @@ export function recordView(db, id) {
 }
 
 /**
+ * ゴミ箱に移動する(論理削除)。物理削除はしない (#10)。
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {number} id
  * @returns {boolean}
  */
 export function remove(db, id) {
-  const result = db.prepare('DELETE FROM videos WHERE id = ?').run(id);
+  const result = db
+    .prepare('UPDATE videos SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND deleted_at IS NULL')
+    .run(id);
   return result.changes > 0;
+}
+
+/**
+ * ゴミ箱の一覧(削除日の新しい順)。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @returns {Video[]}
+ */
+export function findTrash(db) {
+  const rows = db
+    .prepare('SELECT * FROM videos WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC')
+    .all();
+  return attachTags(db, rows);
+}
+
+/**
+ * ゴミ箱から復元する。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} id
+ * @returns {Video|null}
+ */
+export function restore(db, id) {
+  const result = db
+    .prepare('UPDATE videos SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL')
+    .run(id);
+  if (result.changes === 0) return null;
+  return findById(db, id);
+}
+
+/**
+ * ゴミ箱の動画を完全に削除する(元に戻せない)。誤操作防止のため、
+ * 既にゴミ箱に入っている動画のみ対象(通常の一覧からは物理削除できない)。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} id
+ * @returns {boolean}
+ */
+export function purge(db, id) {
+  const result = db.prepare('DELETE FROM videos WHERE id = ? AND deleted_at IS NOT NULL').run(id);
+  return result.changes > 0;
+}
+
+/**
+ * 30日以上前にゴミ箱入りした動画を自動で完全削除する。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} [days]
+ * @returns {number} 削除件数
+ */
+export function purgeExpiredTrash(db, days = 30) {
+  const result = db
+    .prepare(`DELETE FROM videos WHERE deleted_at IS NOT NULL AND deleted_at <= datetime('now', ?)`)
+    .run(`-${Math.floor(days)} days`);
+  return result.changes;
 }

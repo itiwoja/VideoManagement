@@ -88,8 +88,33 @@ export async function createVideo(url: string, title?: string): Promise<CreateVi
   return (await res.json()) as CreateVideoResult;
 }
 
+/** ゴミ箱に移動する(論理削除)。物理削除ではない。 */
 export async function deleteVideo(id: number): Promise<boolean> {
   const res = await fetch(`/api/videos/${id}`, { method: 'DELETE' });
+  return res.ok;
+}
+
+export async function fetchTrash(): Promise<Video[]> {
+  const data = await jsonRequest<Api<{ videos: Video[] }>>('/api/videos/trash', {
+    method: 'GET',
+  });
+  return unwrap(data).videos;
+}
+
+export async function restoreVideo(id: number): Promise<Video | null> {
+  try {
+    const data = await jsonRequest<Api<{ video: Video }>>(`/api/videos/${id}/restore`, {
+      method: 'POST',
+    });
+    return unwrap(data).video;
+  } catch {
+    return null;
+  }
+}
+
+/** ゴミ箱からの完全削除。元に戻せない。 */
+export async function purgeVideo(id: number): Promise<boolean> {
+  const res = await fetch(`/api/videos/${id}/purge`, { method: 'DELETE' });
   return res.ok;
 }
 

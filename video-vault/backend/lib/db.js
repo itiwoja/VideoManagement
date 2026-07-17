@@ -89,4 +89,12 @@ export function migrate(db) {
     db.exec(sql);
     setUserVersion(db, 3);
   }
+
+  // ---- v4: trash (soft delete) ----------------------------------------------
+  if (current < 4) {
+    if (!columnExists(db, 'videos', 'deleted_at')) {
+      db.exec('ALTER TABLE videos ADD COLUMN deleted_at TEXT;');
+    }
+    setUserVersion(db, 4);
+  }
 }
