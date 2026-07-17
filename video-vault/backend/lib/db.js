@@ -17,13 +17,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
 /**
+ * @param {string} [dbPath]  省略時は backend/data.db。':memory:' を渡すとインメモリ DB になる
+ *                           (テスト用、#13)。in-memory は WAL 非対応なので journal_mode を分岐する。
  * @returns {DatabaseSync}
  */
-export function openDb() {
-  const dbPath = path.join(ROOT, 'data.db');
-  const db = new DatabaseSync(dbPath);
+export function openDb(dbPath) {
+  const resolved = dbPath || path.join(ROOT, 'data.db');
+  const db = new DatabaseSync(resolved);
   db.exec('PRAGMA foreign_keys = ON;');
-  db.exec('PRAGMA journal_mode = WAL;');
+  db.exec(`PRAGMA journal_mode = ${resolved === ':memory:' ? 'MEMORY' : 'WAL'};`);
   return db;
 }
 

@@ -47,7 +47,8 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
 // 通常は接続プロトコルから自動判定 (HTTP localhost は非 Secure、HTTPS Funnel は Secure)。
 const COOKIE_SECURE_FORCE = process.env.COOKIE_SECURE === 'true';
 
-const db = openDb();
+// #13: テストでは DB_PATH=:memory: を渡して実 data.db から分離する。
+const db = openDb(process.env.DB_PATH);
 migrate(db);
 
 const app = express();
