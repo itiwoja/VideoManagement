@@ -9,6 +9,7 @@ import { EditVideoDialog } from './EditVideoDialog';
 import { TagFilterBar, type RatingFilter } from './TagFilterBar';
 import { HistoryView } from './HistoryView';
 import { TrashView } from './TrashView';
+import { HiddenGemsView } from './HiddenGemsView';
 import { VideoPlayer } from './VideoPlayer';
 
 const SORT_LABEL: Record<SortKey, string> = {
@@ -17,7 +18,7 @@ const SORT_LABEL: Record<SortKey, string> = {
   last_viewed_at: '最終視聴',
 };
 
-type Tab = 'vault' | 'history' | 'trash';
+type Tab = 'vault' | 'history' | 'trash' | 'gems';
 
 const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' };
 const THEME_LABEL: Record<Theme, string> = { light: '☀️ light', dark: '🌙 dark', system: '🖥️ system' };
@@ -155,6 +156,9 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
             <TabButton active={tab === 'trash'} onClick={() => setTab('trash')}>
               ゴミ箱
             </TabButton>
+            <TabButton active={tab === 'gems'} onClick={() => setTab('gems')}>
+              発掘
+            </TabButton>
           </nav>
 
           {tab === 'vault' && (
@@ -268,8 +272,10 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
         </main>
       ) : tab === 'history' ? (
         <HistoryView />
-      ) : (
+      ) : tab === 'trash' ? (
         <TrashView />
+      ) : (
+        <HiddenGemsView />
       )}
 
       {adding && <AddVideoDialog onClose={handleAddClose} />}

@@ -204,6 +204,41 @@ test('POST /api/videos/:id/tags attaches a tag', async () => {
   assert.equal(json.data.tag.name, 'favorite');
 });
 
+// #21: videoId を view すると後続の「view_count を検証するテスト」が壊れるので、
+// 専用の使い捨て動画を作って検証する。
+let gemVideoId;
+
+test('GET /api/videos/hidden-gems lists an unviewed, high-rated video in both buckets', async () => {
+  const created = await fetchJson('/api/videos', withSession({
+    method: 'POST',
+    body: JSON.stringify({ url: 'https://example.com/hidden-gem', title: 'Hidden Gem' }),
+  }));
+  gemVideoId = created.json.video.id;
+  await fetchJson(`/api/videos/${gemVideoId}`, withSession({
+    method: 'PATCH',
+    body: JSON.stringify({ rating: 5 }),
+  }));
+
+  // view_count=0 (未視聴) かつ rating=5 かつ last_viewed_at=NULL
+  // → 「未視聴」と「見返していない高評価」の両方に該当してよい。
+  const { status, json } = await fetchJson('/api/videos/hidden-gems', withSession());
+  assert.equal(status, 200);
+  assert.ok(json.data.unwatched.some((v) => v.id === gemVideoId));
+  assert.ok(json.data.neglectedFavorites.some((v) => v.id === gemVideoId));
+});
+
+test('GET /api/videos/hidden-gems no longer lists a video as unwatched once viewed', async () => {
+  await fetchJson(`/api/videos/${gemVideoId}/view`, withSession({ method: 'POST' }));
+  const { json } = await fetchJson('/api/videos/hidden-gems', withSession());
+  assert.ok(!json.data.unwatched.some((v) => v.id === gemVideoId));
+  // 見た直後なので neglected (last_viewed_at が古い) からも外れる
+  assert.ok(!json.data.neglectedFavorites.some((v) => v.id === gemVideoId));
+
+  // 後続テストを汚さないよう掃除しておく
+  await fetchJson(`/api/videos/${gemVideoId}`, withSession({ method: 'DELETE' }));
+  await fetchJson(`/api/videos/${gemVideoId}/purge`, withSession({ method: 'DELETE' }));
+});
+
 // #12: FTS5 (trigram) 全文検索。3文字以上は FTS5、未満は LIKE フォールバック。
 let jpVideoId;
 

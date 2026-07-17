@@ -253,6 +253,11 @@ protectedRouter.get('/videos', (req, res) => {
   res.json({ videos: videosRepo.findAll(db, filters) });
 });
 
+// 「埋もれ発掘」ビュー (#21): 未視聴 / 見返していない高評価動画。
+protectedRouter.get('/videos/hidden-gems', (_req, res) => {
+  return successResponse(res, videosRepo.findHiddenGems(db, 30));
+});
+
 protectedRouter.post('/videos', async (req, res) => {
   const { url, title, thumbnail_url, duration } = req.body || {};
   if (!url) {

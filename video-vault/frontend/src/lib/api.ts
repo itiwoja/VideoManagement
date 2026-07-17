@@ -226,6 +226,19 @@ export async function suggestTags(videoId: number): Promise<string[]> {
   }
 }
 
+export interface HiddenGems {
+  unwatched: Video[];
+  neglectedFavorites: Video[];
+}
+
+/** 「埋もれ発掘」: 未視聴の動画 / 高評価なのに見返していない動画 (#21) */
+export async function fetchHiddenGems(): Promise<HiddenGems> {
+  const data = await jsonRequest<Api<HiddenGems>>('/api/videos/hidden-gems', {
+    method: 'GET',
+  });
+  return unwrap(data);
+}
+
 export async function clearHistory(opts: { before?: string } = {}): Promise<number> {
   const params = new URLSearchParams();
   if (opts.before) params.set('before', opts.before);

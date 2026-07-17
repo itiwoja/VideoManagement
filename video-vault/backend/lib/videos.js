@@ -120,6 +120,35 @@ export function findAll(db, filters = {}) {
 }
 
 /**
+ * 「埋もれ発掘」ビュー (#21): 保存したのに一度も見ていない動画と、
+ * 高評価なのに見返していない動画を抽出する。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} [neglectDays]  この日数より最終視聴が古ければ「見返していない」扱い
+ * @returns {{ unwatched: Video[], neglectedFavorites: Video[] }}
+ */
+export function findHiddenGems(db, neglectDays = 30) {
+  const unwatched = db
+    .prepare(
+      `SELECT * FROM videos WHERE deleted_at IS NULL AND view_count = 0 ORDER BY added_at ASC`
+    )
+    .all();
+
+  const neglectedFavorites = db
+    .prepare(
+      `SELECT * FROM videos
+       WHERE deleted_at IS NULL AND rating >= 4
+         AND (last_viewed_at IS NULL OR last_viewed_at <= datetime('now', ?))
+       ORDER BY last_viewed_at IS NOT NULL, last_viewed_at ASC`
+    )
+    .all(`-${Math.floor(neglectDays)} days`);
+
+  return {
+    unwatched: attachTags(db, unwatched),
+    neglectedFavorites: attachTags(db, neglectedFavorites),
+  };
+}
+
+/**
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {number} id
  * @returns {Video|null}
