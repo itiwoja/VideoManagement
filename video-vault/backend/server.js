@@ -30,6 +30,8 @@ import { requireAuth } from './lib/auth-mw.js';
 import { rateLimit } from './lib/rate-limit.js';
 import { extractMedia, extractMetadata } from './lib/extract.js';
 import { saveProxyEntry, getProxyEntry } from './lib/proxy-store.js';
+import { isAllowedOrigin } from './lib/origin-policy.js';
+import { csrfGuard } from './lib/csrf-mw.js';
 
 // ----------------------------------------------------- env validation (fail fast)
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -51,9 +53,24 @@ const app = express();
 // X-Forwarded-Proto を信用 (Tailscale Funnel など reverse proxy 越しの HTTPS 検出用)
 app.set('trust proxy', true);
 
-app.use(cors({ origin: true, credentials: true }));
+// #6: origin:true は全 Origin を反射してしまうため、allowlist 方式に変更。
+// Origin ヘッダが無いリクエスト (拡張機能の background fetch, curl 等) は
+// ブラウザ CORS の対象外のクライアントなのでそのまま許可する。
+app.use(
+  cors({
+    origin(origin, callback) {
+      // false を渡すだけで CORS ヘッダを付けずに処理続行させる (Error を投げると
+      // Express のデフォルトエラーハンドラでスタックトレースが漏れるため避ける)。
+      // 実際のアクセス制御は Cookie の SameSite=Strict と csrfGuard / requireAuth が担う。
+      callback(null, !origin || isAllowedOrigin(origin));
+    },
+    credentials: true,
+  }),
+);
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
+// #20: SameSite=Strict Cookie に加えた多層防御。状態変更系メソッドの Origin/Referer を検証する。
+app.use('/api', csrfGuard);
 
 // ------------------------------------------------------------------ helpers
 const errorResponse = (res, status, message) =>
