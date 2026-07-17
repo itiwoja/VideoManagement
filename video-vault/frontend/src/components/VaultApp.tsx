@@ -463,7 +463,15 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
 
       {adding && <AddVideoDialog onClose={handleAddClose} />}
       {editing && <EditVideoDialog video={editing} onClose={handleEditClose} />}
-      {playing && <VideoPlayer video={playing} onClose={() => setPlaying(null)} />}
+      {playing && (
+        <VideoPlayer
+          key={playing.id}
+          video={playing}
+          onClose={() => setPlaying(null)}
+          queue={videos}
+          onNavigate={handleOpen}
+        />
+      )}
       {addingToPlaylist && (
         <AddToPlaylistDialog video={addingToPlaylist} onClose={() => setAddingToPlaylist(null)} />
       )}

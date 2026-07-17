@@ -302,7 +302,15 @@ function PlaylistDetail({ playlistId, onBack, onRenamed }: PlaylistDetailProps) 
       )}
 
       {editing && <EditVideoDialog video={editing} onClose={handleEditClose} />}
-      {playing && <VideoPlayer video={playing} onClose={() => setPlaying(null)} />}
+      {playing && (
+        <VideoPlayer
+          key={playing.id}
+          video={playing}
+          onClose={() => setPlaying(null)}
+          queue={videos}
+          onNavigate={handleOpen}
+        />
+      )}
     </div>
   );
 }

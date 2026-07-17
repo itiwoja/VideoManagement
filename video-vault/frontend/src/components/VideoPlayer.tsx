@@ -7,6 +7,12 @@ import { extractMedia, type ExtractedMedia } from '../lib/api';
 interface VideoPlayerProps {
   video: Video;
   onClose: () => void;
+  /**
+   * #17 連続再生モード。渡すとヘッダーに前/次と自動再生トグルが出る。
+   * プレイリスト詳細なら並び順どおりの videos、Vault なら現在のフィルタ結果を渡す想定。
+   */
+  queue?: Video[];
+  onNavigate?: (video: Video) => void;
 }
 
 /**
@@ -14,9 +20,27 @@ interface VideoPlayerProps {
  * - YouTube / TikTok / Niconico / Vimeo は iframe 埋め込み
  * - .mp4 等の直リンクは <video> タグ
  * - それ以外 (X 等の埋め込み難しいサイト) は「元サイトで開く」ボタン
+ *
+ * 呼び出し側は動画が変わるたびに `key={video.id}` を付けて再マウントさせること。
+ * (抽出結果や hls.js のアタッチ状態が前の動画のまま残らないようにするため)
  */
-export function VideoPlayer({ video, onClose }: VideoPlayerProps) {
+export function VideoPlayer({ video, onClose, queue, onNavigate }: VideoPlayerProps) {
   const source = resolveSource(video.url);
+  const [autoAdvance, setAutoAdvance] = useState(true);
+
+  const queueIndex = queue?.findIndex((v) => v.id === video.id) ?? -1;
+  const hasQueue = !!queue && queue.length > 1 && queueIndex >= 0;
+  const hasNext = hasQueue && queueIndex < queue.length - 1;
+  const hasPrev = hasQueue && queueIndex > 0;
+  const goNext = () => {
+    if (hasNext) onNavigate?.(queue![queueIndex + 1]);
+  };
+  const goPrev = () => {
+    if (hasPrev) onNavigate?.(queue![queueIndex - 1]);
+  };
+  const handleEnded = () => {
+    if (autoAdvance) goNext();
+  };
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -55,6 +79,40 @@ export function VideoPlayer({ video, onClose }: VideoPlayerProps) {
             {source.serviceLabel ? ` · ${source.serviceLabel}` : ''}
           </div>
         </div>
+        {hasQueue && (
+          <div className="flex items-center gap-2 shrink-0">
+            <label className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoAdvance}
+                onChange={(e) => setAutoAdvance(e.target.checked)}
+                className="accent-indigo-500"
+              />
+              自動再生
+            </label>
+            <span className="text-[10px] text-zinc-500 tabular-nums">
+              {queueIndex + 1} / {queue!.length}
+            </span>
+            <button
+              type="button"
+              onClick={goPrev}
+              disabled={!hasPrev}
+              className="text-xs px-2 py-1.5 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10"
+              title="前の動画"
+            >
+              ◀
+            </button>
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={!hasNext}
+              className="text-xs px-2 py-1.5 rounded-md bg-white/10 hover:bg-white/20 disabled:opacity-30 disabled:hover:bg-white/10"
+              title="次の動画"
+            >
+              ▶
+            </button>
+          </div>
+        )}
         <a
           href={video.url}
           target="_blank"
@@ -92,13 +150,16 @@ export function VideoPlayer({ video, onClose }: VideoPlayerProps) {
             controls
             autoPlay
             playsInline
+            onEnded={handleEnded}
             className="max-w-full max-h-full"
           >
             この動画を再生できません
           </video>
         )}
 
-        {source.type === 'unsupported' && <UnsupportedBlock video={video} onClose={onClose} />}
+        {source.type === 'unsupported' && (
+          <UnsupportedBlock video={video} onClose={onClose} onEnded={handleEnded} />
+        )}
       </div>
     </div>
   );
@@ -117,7 +178,15 @@ type ExtractState =
  * Chrome 系は本来 hls.js が必要だが、bundle 肥大化を避けるために CDN から
  * 動的 import する。
  */
-function UnsupportedBlock({ video, onClose }: { video: Video; onClose: () => void }) {
+function UnsupportedBlock({
+  video,
+  onClose,
+  onEnded,
+}: {
+  video: Video;
+  onClose: () => void;
+  onEnded: () => void;
+}) {
   const [state, setState] = useState<ExtractState>({ phase: 'idle' });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
@@ -192,6 +261,7 @@ function UnsupportedBlock({ video, onClose }: { video: Video; onClose: () => voi
         autoPlay
         playsInline
         poster={state.media.poster}
+        onEnded={onEnded}
         className="max-w-full max-h-full"
       >
         この動画を再生できません
