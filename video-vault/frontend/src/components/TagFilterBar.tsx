@@ -8,6 +8,8 @@ interface TagFilterBarProps {
   onTagChange: (tag: string | null) => void;
   ratingFilter: RatingFilter;
   onRatingChange: (next: RatingFilter) => void;
+  brokenOnly: boolean;
+  onBrokenOnlyChange: (next: boolean) => void;
 }
 
 const RATING_BUTTONS: ReadonlyArray<{ key: RatingFilter; label: string }> = [
@@ -26,17 +28,23 @@ export function TagFilterBar({
   onTagChange,
   ratingFilter,
   onRatingChange,
+  brokenOnly,
+  onBrokenOnlyChange,
 }: TagFilterBarProps) {
   if (tags.length === 0) {
     return (
       <div className="max-w-7xl mx-auto px-6 pb-3 flex flex-wrap items-center gap-3 text-xs">
         <RatingButtons value={ratingFilter} onChange={onRatingChange} />
+        <BrokenOnlyToggle value={brokenOnly} onChange={onBrokenOnlyChange} />
       </div>
     );
   }
   return (
     <div className="max-w-7xl mx-auto px-6 pb-3 space-y-2">
-      <RatingButtons value={ratingFilter} onChange={onRatingChange} />
+      <div className="flex flex-wrap items-center gap-3">
+        <RatingButtons value={ratingFilter} onChange={onRatingChange} />
+        <BrokenOnlyToggle value={brokenOnly} onChange={onBrokenOnlyChange} />
+      </div>
       <div className="flex flex-wrap gap-1.5 text-xs">
         <button
           type="button"
@@ -69,6 +77,28 @@ export function TagFilterBar({
         })}
       </div>
     </div>
+  );
+}
+
+interface BrokenOnlyToggleProps {
+  value: boolean;
+  onChange: (next: boolean) => void;
+}
+
+function BrokenOnlyToggle({ value, onChange }: BrokenOnlyToggleProps) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      title="リンク切れの疑いがある動画だけ表示 (#8)"
+      className={`px-2 py-0.5 rounded text-xs transition-colors ${
+        value
+          ? 'bg-red-600 text-white'
+          : 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800 hover:text-zinc-900 dark:hover:text-zinc-100'
+      }`}
+    >
+      ⚠️ リンク切れのみ
+    </button>
   );
 }
 

@@ -12,6 +12,7 @@ export interface Video {
   note: string | null;
   tags: string[];
   deleted_at?: string | null;
+  link_status?: 'ok' | 'broken' | 'unknown' | null;
 }
 
 export interface Tag {
@@ -41,4 +42,5 @@ export interface VideoFilters {
   /** これ以上 (任意・互換維持) */
   ratingMin?: number;
   unratedOnly?: boolean;
+  brokenOnly?: boolean;
 }

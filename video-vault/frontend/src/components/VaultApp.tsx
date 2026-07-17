@@ -37,6 +37,7 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
   const [sort, setSort] = useState<SortKey>('added_at');
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [ratingFilter, setRatingFilter] = useState<RatingFilter>('all');
+  const [brokenOnly, setBrokenOnly] = useState(false);
   const [editing, setEditing] = useState<Video | null>(null);
   const [playing, setPlaying] = useState<Video | null>(null);
   const [adding, setAdding] = useState(false);
@@ -53,6 +54,7 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
         tag: activeTag ?? undefined,
         ratingExact: typeof ratingFilter === 'number' ? ratingFilter : undefined,
         unratedOnly: ratingFilter === 'unrated',
+        brokenOnly,
       };
       const [v, t] = await Promise.all([fetchVideos(filters), fetchTags()]);
       setVideos(v);
@@ -74,7 +76,7 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, sort, activeTag, ratingFilter]);
+  }, [query, sort, activeTag, ratingFilter, brokenOnly]);
 
   // 起動時に thumbnail_url が NULL の動画を server 側で og:image 補完する。
   // 補完できたら一覧をリロード。
@@ -230,6 +232,8 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
               onTagChange={setActiveTag}
               ratingFilter={ratingFilter}
               onRatingChange={setRatingFilter}
+              brokenOnly={brokenOnly}
+              onBrokenOnlyChange={setBrokenOnly}
             />
             {sites.length > 0 && (
               <div className="max-w-7xl mx-auto px-6 pb-3 flex flex-wrap gap-2 text-xs text-zinc-500">

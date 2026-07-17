@@ -67,6 +67,14 @@ export function VideoCard({ video, onOpen, onDelete, onEdit, onTagClick }: Video
           <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-[10px] uppercase tracking-wide text-zinc-300">
             {video.site}
           </span>
+          {video.link_status === 'broken' && (
+            <span
+              className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-red-600/90 text-white text-[10px]"
+              title="リンク切れの疑いがあります (404 / リンク先消失)"
+            >
+              ⚠️ リンク切れ
+            </span>
+          )}
           {video.note && (
             <span
               className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/70 text-zinc-200 text-xs"

@@ -50,6 +50,7 @@ export async function fetchVideos(filters: VideoFilters = {}): Promise<Video[]> 
     params.set('rating_min', String(filters.ratingMin));
   }
   if (filters.unratedOnly) params.set('unrated', '1');
+  if (filters.brokenOnly) params.set('broken', '1');
 
   const data = await getJson<{ videos: Video[] }>(`/api/videos?${params}`);
   return data.videos;
