@@ -204,6 +204,68 @@ test('POST /api/videos/:id/tags attaches a tag', async () => {
   assert.equal(json.data.tag.name, 'favorite');
 });
 
+// #12: FTS5 (trigram) 全文検索。3文字以上は FTS5、未満は LIKE フォールバック。
+let jpVideoId;
+
+test('setup: add a Japanese-titled video for search tests', async () => {
+  const { json } = await fetchJson('/api/videos', withSession({
+    method: 'POST',
+    body: JSON.stringify({ url: 'https://example.com/tokyo-night', title: '東京の夜景タイムラプス' }),
+  }));
+  jpVideoId = json.video.id;
+  // POST /api/videos は note を受け付けないので (title/url のみ)、PATCH で後付けする。
+  await fetchJson(`/api/videos/${jpVideoId}`, withSession({
+    method: 'PATCH',
+    body: JSON.stringify({ note: 'とても綺麗だった' }),
+  }));
+});
+
+test('GET /api/videos?q= matches a >=3 char Japanese substring via FTS5', async () => {
+  const { json } = await fetchJson('/api/videos?q=%E6%9D%B1%E4%BA%AC%E3%81%AE', withSession()); // "東京の"
+  assert.equal(json.videos.length, 1);
+  assert.equal(json.videos[0].id, jpVideoId);
+});
+
+test('GET /api/videos?q= with a <3 char query cannot match via FTS5 alone (trigram floor)', async () => {
+  // "綺麗" is 2 chars. If this ever went through the FTS5 MATCH path it would find nothing
+  // (trigram needs >=3 chars) — this test exists to document why the LIKE fallback below matters.
+  const { json } = await fetchJson(`/api/videos?q=${encodeURIComponent('綺麗')}`, withSession());
+  assert.equal(json.videos.length, 1); // passes because findAll() routes <3 char queries to LIKE, not FTS5
+  assert.equal(json.videos[0].id, jpVideoId);
+});
+
+test('GET /api/videos?q= matches an attached tag name via FTS5', async () => {
+  await fetchJson(`/api/videos/${jpVideoId}/tags`, withSession({
+    method: 'POST',
+    body: JSON.stringify({ name: 'travel' }),
+  }));
+  const { json } = await fetchJson('/api/videos?q=travel', withSession());
+  assert.equal(json.videos.length, 1);
+  assert.equal(json.videos[0].id, jpVideoId);
+});
+
+test('GET /api/videos?q= does not match unrelated videos', async () => {
+  const { json } = await fetchJson('/api/videos?q=nonexistentquery', withSession());
+  assert.equal(json.videos.length, 0);
+});
+
+test('cleanup: purge the Japanese-titled search test video', async () => {
+  await fetchJson(`/api/videos/${jpVideoId}`, withSession({ method: 'DELETE' }));
+  const purge = await fetchJson(`/api/videos/${jpVideoId}/purge`, withSession({ method: 'DELETE' }));
+  assert.equal(purge.status, 200);
+});
+
+test('POST /api/videos/:id/suggest-tags returns [] when ANTHROPIC_API_KEY is unset (no crash, no 500)', async () => {
+  // このテストプロセスには ANTHROPIC_API_KEY を渡していないので、tagSuggest.suggestTags()
+  // は API 呼び出しをせずに即 [] を返すはず。保存/取得フローを壊さないことの確認。
+  const { status, json } = await fetchJson(`/api/videos/${videoId}/suggest-tags`, withSession({
+    method: 'POST',
+  }));
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+  assert.deepEqual(json.data.tags, []);
+});
+
 test('POST /api/videos/:id/view records a view and history entry', async () => {
   const { status, json } = await fetchJson(`/api/videos/${videoId}/view`, withSession({ method: 'POST' }));
   assert.equal(status, 200);

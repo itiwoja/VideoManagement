@@ -12,6 +12,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import fs from 'fs';
+import { syncVideoFts } from './search-index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -109,5 +110,18 @@ export function migrate(db) {
       db.exec('ALTER TABLE videos ADD COLUMN link_checked_at TEXT;');
     }
     setUserVersion(db, 5);
+  }
+
+  // ---- v6: FTS5 全文検索 (#12) ------------------------------------------------
+  if (current < 6) {
+    db.exec(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS videos_fts USING fts5(title, note, tags_text, tokenize='trigram');`
+    );
+    // 既存データをバックフィル
+    const rows = db.prepare('SELECT id FROM videos').all();
+    for (const row of rows) {
+      syncVideoFts(db, Number(row.id));
+    }
+    setUserVersion(db, 6);
   }
 }

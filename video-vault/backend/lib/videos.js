@@ -3,6 +3,8 @@
 //
 // 関数の責務はクエリ + 整形のみ。HTTP / バリデーションは routes 側に委ねる。
 
+import { syncVideoFts, removeFromFts, ftsPhraseQuery } from './search-index.js';
+
 /**
  * @typedef {Object} Video
  * @property {number} id
@@ -67,9 +69,19 @@ export function findAll(db, filters = {}) {
   const params = [];
 
   if (filters.q) {
-    const like = `%${filters.q}%`;
-    conditions.push('(v.title LIKE ? OR v.site LIKE ?)');
-    params.push(like, like);
+    const q = filters.q.trim();
+    if (q.length >= 3) {
+      // FTS5 (trigram) — title/note/tags 横断。3文字未満は trigram がマッチできないので LIKE にフォールバック。
+      conditions.push('v.id IN (SELECT rowid FROM videos_fts WHERE videos_fts MATCH ?)');
+      params.push(ftsPhraseQuery(q));
+    } else if (q.length > 0) {
+      const like = `%${q}%`;
+      conditions.push(
+        `(v.title LIKE ? OR v.site LIKE ? OR v.note LIKE ?
+          OR v.id IN (SELECT vt.video_id FROM video_tags vt JOIN tags t ON t.id = vt.tag_id WHERE t.name LIKE ?))`
+      );
+      params.push(like, like, like, like);
+    }
   }
 
   if (filters.tag) {
@@ -132,7 +144,9 @@ export function create(db, input) {
   );
   try {
     const result = stmt.run(url, site, title, thumbnail_url, duration);
-    const video = findById(db, Number(result.lastInsertRowid));
+    const id = Number(result.lastInsertRowid);
+    syncVideoFts(db, id);
+    const video = findById(db, id);
     return { video, created: true };
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
@@ -182,6 +196,7 @@ export function update(db, id, patch) {
     .prepare(`UPDATE videos SET ${sets.join(', ')} WHERE id = ?`)
     .run(...params);
   if (result.changes === 0) return null;
+  syncVideoFts(db, id);
   return findById(db, id);
 }
 
@@ -283,6 +298,7 @@ export function restore(db, id) {
  */
 export function purge(db, id) {
   const result = db.prepare('DELETE FROM videos WHERE id = ? AND deleted_at IS NOT NULL').run(id);
+  if (result.changes > 0) removeFromFts(db, id);
   return result.changes > 0;
 }
 

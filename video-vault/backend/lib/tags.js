@@ -1,6 +1,8 @@
 // lib/tags.js
 // tags + video_tags の操作。
 
+import { syncVideoFts } from './search-index.js';
+
 /**
  * @typedef {Object} TagWithCount
  * @property {number} id
@@ -62,6 +64,7 @@ export function attachToVideo(db, videoId, name) {
   db.prepare(
     'INSERT OR IGNORE INTO video_tags (video_id, tag_id) VALUES (?, ?)'
   ).run(videoId, tag.id);
+  syncVideoFts(db, videoId); // #12: タグは videos_fts の検索対象にも含む
   return tag;
 }
 
@@ -75,5 +78,6 @@ export function detachFromVideo(db, videoId, tagId) {
   const result = db
     .prepare('DELETE FROM video_tags WHERE video_id = ? AND tag_id = ?')
     .run(videoId, tagId);
+  if (result.changes > 0) syncVideoFts(db, videoId);
   return result.changes > 0;
 }
