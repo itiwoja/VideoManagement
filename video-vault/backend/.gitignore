@@ -9,6 +9,9 @@
 *.db
 *.db-*
 
+# Locally cached thumbnails (#7)
+/data/thumbnails/
+
 # Logs
 *.log
 

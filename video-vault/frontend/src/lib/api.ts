@@ -208,6 +208,24 @@ export async function enrichMissingThumbnails(): Promise<{ scanned: number; upda
   }
 }
 
+/**
+ * 保存済み動画のタイトル・サイト・メモ・既存タグから Claude API でタグ候補を提案してもらう (#14)。
+ * 完全 opt-in の機能: backend 側で ANTHROPIC_API_KEY が未設定なら常に [] が返る。
+ * 失敗時 (未設定・ネットワークエラー・タイムアウト等) は例外を投げず [] を返す
+ * (extractMedia と同じ「ベストエフォート、失敗は無音」のスタイル)。
+ */
+export async function suggestTags(videoId: number): Promise<string[]> {
+  try {
+    const data = await jsonRequest<Api<{ tags: string[] }>>(
+      `/api/videos/${videoId}/suggest-tags`,
+      { method: 'POST' },
+    );
+    return unwrap(data).tags;
+  } catch {
+    return [];
+  }
+}
+
 export async function clearHistory(opts: { before?: string } = {}): Promise<number> {
   const params = new URLSearchParams();
   if (opts.before) params.set('before', opts.before);

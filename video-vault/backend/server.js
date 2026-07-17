@@ -29,11 +29,13 @@ import {
 import { requireAuth } from './lib/auth-mw.js';
 import { rateLimit } from './lib/rate-limit.js';
 import { extractMedia, extractMetadata } from './lib/extract.js';
+import { suggestTags } from './lib/tag-suggest.js';
 import { saveProxyEntry, getProxyEntry } from './lib/proxy-store.js';
 import { isAllowedOrigin } from './lib/origin-policy.js';
 import { csrfGuard } from './lib/csrf-mw.js';
 import { registerJob, startScheduler, getJobStatuses } from './lib/scheduler.js';
 import { checkLink } from './lib/link-checker.js';
+import { downloadThumbnail, THUMBS_DIR } from './lib/thumbnail-cache.js';
 
 // ----------------------------------------------------- env validation (fail fast)
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
@@ -74,6 +76,10 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 // #20: SameSite=Strict Cookie に加えた多層防御。状態変更系メソッドの Origin/Referer を検証する。
 app.use('/api', csrfGuard);
+
+// #7: ローカルキャッシュ済みサムネイル画像の配信。<img> は同一オリジンなら Cookie を
+// 自動で送るので、他の API と同じ requireAuth をそのまま被せられる。
+app.use('/thumbs', requireAuth(db), express.static(THUMBS_DIR));
 
 // ------------------------------------------------------------------ helpers
 const errorResponse = (res, status, message) =>
@@ -589,6 +595,25 @@ protectedRouter.delete('/videos/:videoId/tags/:tagId', (req, res) => {
   return successResponse(res, { detached: true });
 });
 
+// #14: 保存済み動画のタイトル・サイト・メモ・既存タグ一覧から Claude API でタグ候補を提案する。
+// ANTHROPIC_API_KEY 未設定なら tagSuggest.suggestTags() が [] を即返す (API 呼び出しなし)。
+// あくまで best-effort な nice-to-have なので、失敗しても 200 + tags: [] を返し、保存フローは絶対に壊さない。
+protectedRouter.post('/videos/:id/suggest-tags', async (req, res) => {
+  const videoId = parseId(req.params.id);
+  if (videoId === null) return errorResponse(res, 400, 'invalid id');
+  const video = videosRepo.findById(db, videoId);
+  if (!video) return errorResponse(res, 404, 'video not found');
+
+  const existingTags = tagsRepo.findAll(db).map((t) => t.name);
+  const tags = await suggestTags({
+    title: video.title,
+    site: video.site,
+    note: video.note,
+    existingTags,
+  });
+  return successResponse(res, { tags });
+});
+
 // ------------------------------------------------------------------ protected: history
 protectedRouter.get('/history', (req, res) => {
   const limit = req.query.limit ? Number(req.query.limit) : undefined;
@@ -653,6 +678,21 @@ registerJob({
   runOnStart: false,
   run() {
     videosRepo.purgeExpiredTrash(db, 30);
+  },
+});
+
+// #7: 外部 URL のままのサムネイルをローカルにダウンロードして「消えないVault」の3本柱を揃える。
+registerJob({
+  name: 'thumbnail-cache',
+  intervalMs: 15 * 60 * 1000, // 15分ごと
+  runOnStart: true,
+  async run() {
+    const targets = videosRepo.findRemoteThumbnails(db, 10);
+    for (const t of targets) {
+      const localPath = await downloadThumbnail(t.thumbnailUrl, t.id);
+      if (localPath) videosRepo.setCachedThumbnail(db, t.id, localPath);
+      // 失敗時は thumbnail_url が http のまま残るので次回また対象になる (best effort retry)
+    }
   },
 });
 

@@ -4,6 +4,7 @@
 // 関数の責務はクエリ + 整形のみ。HTTP / バリデーションは routes 側に委ねる。
 
 import { syncVideoFts, removeFromFts, ftsPhraseQuery } from './search-index.js';
+import { deleteCachedThumbnail } from './thumbnail-cache.js';
 
 /**
  * @typedef {Object} Video
@@ -230,6 +231,33 @@ export function findMissingThumbnails(db, limit = 50) {
 }
 
 /**
+ * thumbnail_url が外部 URL (まだローカルキャッシュしていない) の動画一覧 (#7)。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} [limit]
+ * @returns {{ id: number, thumbnailUrl: string }[]}
+ */
+export function findRemoteThumbnails(db, limit = 20) {
+  const rows = db
+    .prepare(
+      `SELECT id, thumbnail_url FROM videos
+       WHERE deleted_at IS NULL AND thumbnail_url LIKE 'http%'
+       LIMIT ?`
+    )
+    .all(limit);
+  return rows.map((r) => ({ id: Number(r.id), thumbnailUrl: String(r.thumbnail_url) }));
+}
+
+/**
+ * ローカルキャッシュ後の thumbnail_url に書き換える (#7)。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {number} id
+ * @param {string} localPath  `/thumbs/xxx.jpg`
+ */
+export function setCachedThumbnail(db, id, localPath) {
+  db.prepare('UPDATE videos SET thumbnail_url = ? WHERE id = ?').run(localPath, id);
+}
+
+/**
  * @param {import('node:sqlite').DatabaseSync} db
  * @param {number} id
  * @returns {{ video: Video|null, viewed: boolean }}
@@ -297,8 +325,13 @@ export function restore(db, id) {
  * @returns {boolean}
  */
 export function purge(db, id) {
+  const row = db.prepare('SELECT thumbnail_url FROM videos WHERE id = ? AND deleted_at IS NOT NULL').get(id);
+  if (!row) return false;
   const result = db.prepare('DELETE FROM videos WHERE id = ? AND deleted_at IS NOT NULL').run(id);
-  if (result.changes > 0) removeFromFts(db, id);
+  if (result.changes > 0) {
+    removeFromFts(db, id);
+    deleteCachedThumbnail(row.thumbnail_url); // #7: ローカルキャッシュしたサムネ画像も掃除する
+  }
   return result.changes > 0;
 }
 

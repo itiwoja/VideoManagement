@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Video } from '../types';
-import { createVideo } from '../lib/api';
+import { attachTag, createVideo, suggestTags } from '../lib/api';
 
 interface AddVideoDialogProps {
   /** 登録成功 (新規 / 重複どちらも) で呼ばれる。null は「閉じるだけ」 */
@@ -15,6 +15,10 @@ interface SubmitState {
 /**
  * URL を貼り付けて手動で動画を登録するダイアログ。
  * title 省略時は server が og:title を取りに行って補完する。
+ *
+ * 登録成功後、#14 のタグ自動提案 (opt-in, ANTHROPIC_API_KEY 未設定なら常に無音) を取得し、
+ * 候補があればワンタップで付与できるチップとして表示してから閉じる。
+ * 候補が無い (未設定 / 提案なし) 場合は今まで通り登録直後に即座に閉じる。
  */
 export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
   const [url, setUrl] = useState('');
@@ -22,14 +26,27 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
   const [state, setState] = useState<SubmitState>({ loading: false, error: null });
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // 登録済みの動画 (タグ候補フェーズに入ったら non-null)。
+  // 閉じる系のハンドラは全てこれを渡す = 登録後に閉じても DB との整合性が崩れない。
+  const [finalVideo, setFinalVideo] = useState<Video | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [attachedNames, setAttachedNames] = useState<Set<string>>(new Set());
+  const [attachingName, setAttachingName] = useState<string | null>(null);
+
+  // 初回マウント時のみフォーカス
   useEffect(() => {
     inputRef.current?.focus();
+  }, []);
+
+  // ESC で閉じる。finalVideo が立っていれば (登録済み) それを渡す — null で閉じると
+  // 既に保存済みの動画が一覧に反映されないまま宙に浮く。
+  useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose(null);
+      if (e.key === 'Escape') onClose(finalVideo);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [onClose]);
+  }, [onClose, finalVideo]);
 
   const handlePasteFromClipboard = async (): Promise<void> => {
     try {
@@ -59,110 +76,195 @@ export function AddVideoDialog({ onClose }: AddVideoDialogProps) {
       // 失敗しても登録できるようにするため。og:title が拾えればその時点で上書きされる)
       const fallbackTitle = title.trim() || trimmed;
       const result = await createVideo(trimmed, fallbackTitle);
-      onClose(result.video);
+
+      // タグ候補取得 (opt-in, best-effort)。ANTHROPIC_API_KEY 未設定なら backend が
+      // 即座に [] を返す (API 呼び出しなし) ので、未設定時の体感速度は今まで通り。
+      const tags = await suggestTags(result.video.id);
+      if (tags.length === 0) {
+        // 候補なし (未設定 or 提案なし) — 今まで通り即クローズ
+        onClose(result.video);
+        return;
+      }
+
+      setFinalVideo(result.video);
+      setSuggestions(tags);
+      setState({ loading: false, error: null });
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'unknown error';
       setState({ loading: false, error: `登録に失敗しました: ${msg}` });
     }
   };
 
+  const handleAttachSuggestion = async (name: string): Promise<void> => {
+    if (!finalVideo || attachedNames.has(name) || attachingName) return;
+    setAttachingName(name);
+    try {
+      await attachTag(finalVideo.id, name);
+      setAttachedNames((prev) => new Set(prev).add(name));
+      setFinalVideo((prev) =>
+        prev && !prev.tags.includes(name)
+          ? { ...prev, tags: [...prev.tags, name].sort() }
+          : prev,
+      );
+    } catch {
+      // ベストエフォート機能。失敗してもチップは再タップ可能なまま残す。
+    } finally {
+      setAttachingName(null);
+    }
+  };
+
+  const closeDialog = (): void => onClose(finalVideo);
+
   return (
     <div
       className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={() => onClose(null)}
+      onClick={closeDialog}
     >
       <div
         className="w-full max-w-md bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="flex items-center justify-between px-5 py-4 border-b border-zinc-200 dark:border-zinc-800">
-          <h2 className="text-base font-medium text-zinc-900 dark:text-zinc-100">動画を追加</h2>
+          <h2 className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+            {finalVideo ? '登録しました' : '動画を追加'}
+          </h2>
           <button
             type="button"
             aria-label="閉じる"
-            onClick={() => onClose(null)}
+            onClick={closeDialog}
             className="text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-md text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
             ×
           </button>
         </header>
 
-        <form onSubmit={(e) => void handleSubmit(e)} className="px-5 py-4 space-y-4">
-          <div>
-            <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5" htmlFor="add-url">
-              URL <span className="text-red-400">*</span>
-            </label>
-            <div className="flex gap-2">
+        {finalVideo ? (
+          <div className="px-5 py-4 space-y-4">
+            <div className="rounded-md bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-3 py-2.5">
+              <p className="text-sm text-zinc-900 dark:text-zinc-100 line-clamp-2">
+                {finalVideo.title}
+              </p>
+            </div>
+
+            {suggestions.length > 0 && (
+              <div>
+                <p className="mb-2 text-xs text-zinc-500 dark:text-zinc-400">
+                  タグ候補 (タップで追加)
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestions.map((name) => {
+                    const added = attachedNames.has(name);
+                    const busy = attachingName === name;
+                    return (
+                      <button
+                        key={name}
+                        type="button"
+                        disabled={added || busy}
+                        onClick={() => void handleAttachSuggestion(name)}
+                        aria-label={added ? `${name} を追加済み` : `${name} をタグとして追加`}
+                        className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                          added
+                            ? 'bg-indigo-100 border-indigo-200 text-indigo-700 cursor-default dark:bg-indigo-950/50 dark:border-indigo-900 dark:text-indigo-300'
+                            : 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 disabled:opacity-60 dark:bg-indigo-950/30 dark:border-indigo-900 dark:text-indigo-300 dark:hover:bg-indigo-900/40'
+                        }`}
+                      >
+                        {added ? '✓' : '+'}#{name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="px-4 py-2 text-sm rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 font-medium
+                           hover:bg-zinc-700 dark:hover:bg-zinc-300"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={(e) => void handleSubmit(e)} className="px-5 py-4 space-y-4">
+            <div>
+              <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5" htmlFor="add-url">
+                URL <span className="text-red-400">*</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  ref={inputRef}
+                  id="add-url"
+                  type="url"
+                  inputMode="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder="https://..."
+                  disabled={state.loading}
+                  className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100
+                             focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600
+                             disabled:opacity-50"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handlePasteFromClipboard()}
+                  disabled={state.loading}
+                  className="px-3 py-2 text-xs rounded-md bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
+                  title="クリップボードから貼り付け"
+                >
+                  📋 貼付
+                </button>
+              </div>
+              <p className="mt-1.5 text-[10px] text-zinc-500 leading-relaxed">
+                タイトル・サムネは自動で取得されます (og:title / og:image)
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5" htmlFor="add-title">
+                タイトル <span className="text-zinc-600">(任意 — 自動取得を上書き)</span>
+              </label>
               <input
-                ref={inputRef}
-                id="add-url"
-                type="url"
-                inputMode="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://..."
+                id="add-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="自動取得に任せるなら空欄でOK"
                 disabled={state.loading}
-                className="flex-1 bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100
+                className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100
                            focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600
                            disabled:opacity-50"
               />
+            </div>
+
+            {state.error && (
+              <div className="p-2.5 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs">
+                {state.error}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end pt-2">
               <button
                 type="button"
-                onClick={() => void handlePasteFromClipboard()}
+                onClick={closeDialog}
                 disabled={state.loading}
-                className="px-3 py-2 text-xs rounded-md bg-zinc-200 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-300 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
-                title="クリップボードから貼り付け"
+                className="px-4 py-2 text-sm rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
               >
-                📋 貼付
+                キャンセル
+              </button>
+              <button
+                type="submit"
+                disabled={state.loading || !url.trim()}
+                className="px-4 py-2 text-sm rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 font-medium
+                           hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {state.loading ? '登録中…' : '登録'}
               </button>
             </div>
-            <p className="mt-1.5 text-[10px] text-zinc-500 leading-relaxed">
-              タイトル・サムネは自動で取得されます (og:title / og:image)
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-xs text-zinc-500 dark:text-zinc-400 mb-1.5" htmlFor="add-title">
-              タイトル <span className="text-zinc-600">(任意 — 自動取得を上書き)</span>
-            </label>
-            <input
-              id="add-title"
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="自動取得に任せるなら空欄でOK"
-              disabled={state.loading}
-              className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md px-3 py-2 text-sm text-zinc-900 dark:text-zinc-100
-                         focus:outline-none focus:border-zinc-600 placeholder:text-zinc-600
-                         disabled:opacity-50"
-            />
-          </div>
-
-          {state.error && (
-            <div className="p-2.5 rounded-md bg-red-50 border border-red-200 text-red-700 dark:bg-red-950/40 dark:border-red-900 dark:text-red-200 text-xs">
-              {state.error}
-            </div>
-          )}
-
-          <div className="flex gap-2 justify-end pt-2">
-            <button
-              type="button"
-              onClick={() => onClose(null)}
-              disabled={state.loading}
-              className="px-4 py-2 text-sm rounded-md text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
-            >
-              キャンセル
-            </button>
-            <button
-              type="submit"
-              disabled={state.loading || !url.trim()}
-              className="px-4 py-2 text-sm rounded-md bg-zinc-900 text-zinc-100 dark:bg-zinc-100 dark:text-zinc-900 font-medium
-                         hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {state.loading ? '登録中…' : '登録'}
-            </button>
-          </div>
-        </form>
+          </form>
+        )}
       </div>
     </div>
   );
