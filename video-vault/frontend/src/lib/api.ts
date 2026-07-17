@@ -1,4 +1,4 @@
-import type { HistoryEntry, Tag, Video, VideoFilters } from '../types';
+import type { HistoryEntry, Playlist, Tag, Video, VideoFilters } from '../types';
 
 interface ApiOk<T> {
   ok: true;
@@ -256,4 +256,66 @@ export async function clearHistory(opts: { before?: string } = {}): Promise<numb
     { method: 'DELETE' },
   );
   return unwrap(data).deleted;
+}
+
+// ---------------------------------------------------------------- playlists (#16)
+
+export async function fetchPlaylists(): Promise<Playlist[]> {
+  const data = await jsonRequest<Api<{ playlists: Playlist[] }>>('/api/playlists', {
+    method: 'GET',
+  });
+  return unwrap(data).playlists;
+}
+
+export async function createPlaylist(name: string): Promise<Playlist> {
+  const data = await jsonRequest<Api<{ playlist: Playlist }>>('/api/playlists', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  });
+  return unwrap(data).playlist;
+}
+
+export async function renamePlaylist(id: number, name: string): Promise<Playlist> {
+  const data = await jsonRequest<Api<{ playlist: Playlist }>>(`/api/playlists/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ name }),
+  });
+  return unwrap(data).playlist;
+}
+
+export async function deletePlaylist(id: number): Promise<boolean> {
+  const res = await fetch(`/api/playlists/${id}`, { method: 'DELETE' });
+  return res.ok;
+}
+
+export async function fetchPlaylistDetail(
+  id: number,
+): Promise<{ playlist: Playlist; videos: Video[] }> {
+  const data = await jsonRequest<Api<{ playlist: Playlist; videos: Video[] }>>(
+    `/api/playlists/${id}`,
+    { method: 'GET' },
+  );
+  return unwrap(data);
+}
+
+/** @returns 実際に追加できたら true (既に入っていた場合は false) */
+export async function addVideoToPlaylist(playlistId: number, videoId: number): Promise<boolean> {
+  const data = await jsonRequest<Api<{ added: boolean; videos: Video[] }>>(
+    `/api/playlists/${playlistId}/videos`,
+    { method: 'POST', body: JSON.stringify({ videoId }) },
+  );
+  return unwrap(data).added;
+}
+
+export async function removeVideoFromPlaylist(playlistId: number, videoId: number): Promise<boolean> {
+  const res = await fetch(`/api/playlists/${playlistId}/videos/${videoId}`, { method: 'DELETE' });
+  return res.ok;
+}
+
+export async function reorderPlaylist(playlistId: number, videoIds: number[]): Promise<Video[]> {
+  const data = await jsonRequest<Api<{ videos: Video[] }>>(`/api/playlists/${playlistId}/videos`, {
+    method: 'PUT',
+    body: JSON.stringify({ videoIds }),
+  });
+  return unwrap(data).videos;
 }

@@ -124,4 +124,11 @@ export function migrate(db) {
     }
     setUserVersion(db, 6);
   }
+
+  // ---- v7: playlists (#16) ---------------------------------------------------
+  if (current < 7) {
+    const sql = fs.readFileSync(path.join(dir, '004_playlists.sql'), 'utf8');
+    db.exec(sql);
+    setUserVersion(db, 7);
+  }
 }

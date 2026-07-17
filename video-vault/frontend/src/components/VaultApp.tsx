@@ -10,6 +10,8 @@ import { TagFilterBar, type RatingFilter } from './TagFilterBar';
 import { HistoryView } from './HistoryView';
 import { TrashView } from './TrashView';
 import { HiddenGemsView } from './HiddenGemsView';
+import { PlaylistsView } from './PlaylistsView';
+import { AddToPlaylistDialog } from './AddToPlaylistDialog';
 import { VideoPlayer } from './VideoPlayer';
 
 const SORT_LABEL: Record<SortKey, string> = {
@@ -20,7 +22,7 @@ const SORT_LABEL: Record<SortKey, string> = {
 
 const PAGE_SIZE = 60; // #11
 
-type Tab = 'vault' | 'history' | 'trash' | 'gems';
+type Tab = 'vault' | 'history' | 'trash' | 'gems' | 'playlists';
 
 const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' };
 const THEME_LABEL: Record<Theme, string> = { light: '☀️ light', dark: '🌙 dark', system: '🖥️ system' };
@@ -42,6 +44,7 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
   const [brokenOnly, setBrokenOnly] = useState(false);
   const [editing, setEditing] = useState<Video | null>(null);
   const [playing, setPlaying] = useState<Video | null>(null);
+  const [addingToPlaylist, setAddingToPlaylist] = useState<Video | null>(null);
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -258,6 +261,9 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
             <TabButton active={tab === 'gems'} onClick={() => setTab('gems')}>
               発掘
             </TabButton>
+            <TabButton active={tab === 'playlists'} onClick={() => setTab('playlists')}>
+              プレイリスト
+            </TabButton>
           </nav>
 
           {tab === 'vault' && (
@@ -432,6 +438,7 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
                     selectable={selectionMode}
                     selected={selectedIds.has(v.id)}
                     onToggleSelect={() => toggleSelected(v.id)}
+                    onAddToPlaylist={() => setAddingToPlaylist(v)}
                   />
                 ))}
               </ul>
@@ -448,13 +455,18 @@ export function VaultApp({ onLoggedOut, theme, setTheme }: VaultAppProps) {
         <HistoryView />
       ) : tab === 'trash' ? (
         <TrashView />
-      ) : (
+      ) : tab === 'gems' ? (
         <HiddenGemsView />
+      ) : (
+        <PlaylistsView />
       )}
 
       {adding && <AddVideoDialog onClose={handleAddClose} />}
       {editing && <EditVideoDialog video={editing} onClose={handleEditClose} />}
       {playing && <VideoPlayer video={playing} onClose={() => setPlaying(null)} />}
+      {addingToPlaylist && (
+        <AddToPlaylistDialog video={addingToPlaylist} onClose={() => setAddingToPlaylist(null)} />
+      )}
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { openDb, migrate } from './lib/db.js';
 import * as videosRepo from './lib/videos.js';
 import * as tagsRepo from './lib/tags.js';
 import * as historyRepo from './lib/history.js';
+import * as playlistsRepo from './lib/playlists.js';
 import {
   createApiToken,
   createSessionJwt,
@@ -626,6 +627,89 @@ protectedRouter.post('/videos/:id/suggest-tags', async (req, res) => {
     existingTags,
   });
   return successResponse(res, { tags });
+});
+
+// ------------------------------------------------------------------ protected: playlists (#16)
+protectedRouter.get('/playlists', (_req, res) => {
+  return successResponse(res, { playlists: playlistsRepo.findAll(db) });
+});
+
+protectedRouter.post('/playlists', (req, res) => {
+  const { name } = req.body || {};
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return errorResponse(res, 400, 'name is required');
+  }
+  try {
+    const playlist = playlistsRepo.create(db, name);
+    return successResponse(res, { playlist });
+  } catch (err) {
+    return errorResponse(res, 400, err.message);
+  }
+});
+
+protectedRouter.get('/playlists/:id', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
+  const playlist = playlistsRepo.findById(db, id);
+  if (!playlist) return errorResponse(res, 404, 'not found');
+  const videos = playlistsRepo.findVideos(db, id);
+  return successResponse(res, { playlist, videos });
+});
+
+protectedRouter.patch('/playlists/:id', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
+  const { name } = req.body || {};
+  if (typeof name !== 'string' || name.trim().length === 0) {
+    return errorResponse(res, 400, 'name is required');
+  }
+  try {
+    const playlist = playlistsRepo.rename(db, id, name);
+    if (!playlist) return errorResponse(res, 404, 'not found');
+    return successResponse(res, { playlist });
+  } catch (err) {
+    return errorResponse(res, 400, err.message);
+  }
+});
+
+protectedRouter.delete('/playlists/:id', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
+  const ok = playlistsRepo.remove(db, id);
+  if (!ok) return errorResponse(res, 404, 'not found');
+  return successResponse(res, { deleted: true });
+});
+
+protectedRouter.post('/playlists/:id/videos', (req, res) => {
+  const id = parseId(req.params.id);
+  const videoId = parseId((req.body || {}).videoId);
+  if (id === null || videoId === null) return errorResponse(res, 400, 'invalid id');
+  if (!playlistsRepo.findById(db, id)) return errorResponse(res, 404, 'playlist not found');
+  if (!videosRepo.findById(db, videoId)) return errorResponse(res, 404, 'video not found');
+  const added = playlistsRepo.addVideo(db, id, videoId);
+  return successResponse(res, { added, videos: playlistsRepo.findVideos(db, id) });
+});
+
+protectedRouter.delete('/playlists/:id/videos/:videoId', (req, res) => {
+  const id = parseId(req.params.id);
+  const videoId = parseId(req.params.videoId);
+  if (id === null || videoId === null) return errorResponse(res, 400, 'invalid id');
+  const ok = playlistsRepo.removeVideo(db, id, videoId);
+  if (!ok) return errorResponse(res, 404, 'not in playlist');
+  return successResponse(res, { removed: true });
+});
+
+// 並び順の丸ごと置き換え。{ videoIds: number[] } を先頭から順に position として振り直す。
+protectedRouter.put('/playlists/:id/videos', (req, res) => {
+  const id = parseId(req.params.id);
+  if (id === null) return errorResponse(res, 400, 'invalid id');
+  if (!playlistsRepo.findById(db, id)) return errorResponse(res, 404, 'playlist not found');
+  const { videoIds } = req.body || {};
+  if (!Array.isArray(videoIds) || !videoIds.every((v) => Number.isInteger(v))) {
+    return errorResponse(res, 400, 'videoIds must be an array of integers');
+  }
+  playlistsRepo.reorder(db, id, videoIds);
+  return successResponse(res, { videos: playlistsRepo.findVideos(db, id) });
 });
 
 // ------------------------------------------------------------------ protected: history

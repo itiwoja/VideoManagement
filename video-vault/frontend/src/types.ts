@@ -31,6 +31,13 @@ export interface HistoryEntry {
   thumbnail_url: string | null;
 }
 
+export interface Playlist {
+  id: number;
+  name: string;
+  created_at: string;
+  video_count: number;
+}
+
 export type SortKey = 'added_at' | 'view_count' | 'last_viewed_at';
 
 export interface VideoFilters {

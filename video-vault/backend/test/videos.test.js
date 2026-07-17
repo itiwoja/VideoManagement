@@ -330,6 +330,107 @@ test('cleanup: purge pagination test videos', async () => {
   }
 });
 
+// #16: プレイリスト
+let playlistId;
+let playlistVideoIds = [];
+
+test('setup: create 3 videos for playlist tests', async () => {
+  for (let i = 0; i < 3; i++) {
+    const { json } = await fetchJson('/api/videos', withSession({
+      method: 'POST',
+      body: JSON.stringify({ url: `https://example.com/pl-${i}`, title: `Playlist Video ${i}` }),
+    }));
+    playlistVideoIds.push(json.video.id);
+  }
+});
+
+test('POST /api/playlists creates a playlist', async () => {
+  const { status, json } = await fetchJson('/api/playlists', withSession({
+    method: 'POST',
+    body: JSON.stringify({ name: 'Test Playlist' }),
+  }));
+  assert.equal(status, 200);
+  assert.equal(json.data.playlist.name, 'Test Playlist');
+  assert.equal(json.data.playlist.video_count, 0);
+  playlistId = json.data.playlist.id;
+});
+
+test('GET /api/playlists lists it', async () => {
+  const { json } = await fetchJson('/api/playlists', withSession());
+  assert.ok(json.data.playlists.some((p) => p.id === playlistId));
+});
+
+test('POST /api/playlists/:id/videos appends videos in call order', async () => {
+  for (const id of playlistVideoIds) {
+    const { status } = await fetchJson(`/api/playlists/${playlistId}/videos`, withSession({
+      method: 'POST',
+      body: JSON.stringify({ videoId: id }),
+    }));
+    assert.equal(status, 200);
+  }
+  const { json } = await fetchJson(`/api/playlists/${playlistId}`, withSession());
+  assert.deepEqual(json.data.videos.map((v) => v.id), playlistVideoIds);
+});
+
+test('POST /api/playlists/:id/videos is idempotent (adding the same video twice is a no-op)', async () => {
+  const { json } = await fetchJson(`/api/playlists/${playlistId}/videos`, withSession({
+    method: 'POST',
+    body: JSON.stringify({ videoId: playlistVideoIds[0] }),
+  }));
+  assert.equal(json.data.added, false);
+  assert.equal(json.data.videos.length, 3); // 重複追加されていない
+});
+
+test('PUT /api/playlists/:id/videos reorders', async () => {
+  const reversed = [...playlistVideoIds].reverse();
+  const { status, json } = await fetchJson(`/api/playlists/${playlistId}/videos`, withSession({
+    method: 'PUT',
+    body: JSON.stringify({ videoIds: reversed }),
+  }));
+  assert.equal(status, 200);
+  assert.deepEqual(json.data.videos.map((v) => v.id), reversed);
+});
+
+test('DELETE /api/playlists/:id/videos/:videoId removes one video', async () => {
+  const { status } = await fetchJson(`/api/playlists/${playlistId}/videos/${playlistVideoIds[0]}`, withSession({
+    method: 'DELETE',
+  }));
+  assert.equal(status, 200);
+  const { json } = await fetchJson(`/api/playlists/${playlistId}`, withSession());
+  assert.equal(json.data.videos.length, 2);
+  assert.ok(!json.data.videos.some((v) => v.id === playlistVideoIds[0]));
+});
+
+test('PATCH /api/playlists/:id renames it', async () => {
+  const { status, json } = await fetchJson(`/api/playlists/${playlistId}`, withSession({
+    method: 'PATCH',
+    body: JSON.stringify({ name: 'Renamed Playlist' }),
+  }));
+  assert.equal(status, 200);
+  assert.equal(json.data.playlist.name, 'Renamed Playlist');
+});
+
+test('trashing a video removes it from playlist video listings', async () => {
+  await fetchJson(`/api/videos/${playlistVideoIds[1]}`, withSession({ method: 'DELETE' }));
+  const { json } = await fetchJson(`/api/playlists/${playlistId}`, withSession());
+  assert.ok(!json.data.videos.some((v) => v.id === playlistVideoIds[1]));
+  await fetchJson(`/api/videos/${playlistVideoIds[1]}/restore`, withSession({ method: 'POST' }));
+});
+
+test('DELETE /api/playlists/:id deletes the playlist', async () => {
+  const { status } = await fetchJson(`/api/playlists/${playlistId}`, withSession({ method: 'DELETE' }));
+  assert.equal(status, 200);
+  const { json } = await fetchJson('/api/playlists', withSession());
+  assert.ok(!json.data.playlists.some((p) => p.id === playlistId));
+});
+
+test('cleanup: purge playlist test videos', async () => {
+  for (const id of playlistVideoIds) {
+    await fetchJson(`/api/videos/${id}`, withSession({ method: 'DELETE' }));
+    await fetchJson(`/api/videos/${id}/purge`, withSession({ method: 'DELETE' }));
+  }
+});
+
 test('POST /api/videos/:id/suggest-tags returns [] when ANTHROPIC_API_KEY is unset (no crash, no 500)', async () => {
   // このテストプロセスには ANTHROPIC_API_KEY を渡していないので、tagSuggest.suggestTags()
   // は API 呼び出しをせずに即 [] を返すはず。保存/取得フローを壊さないことの確認。

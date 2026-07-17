@@ -11,6 +11,12 @@ interface VideoCardProps {
   selectable?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
+  /** #16: 省略時はボタン自体を表示しない (Trash/HiddenGems 等では出さない) */
+  onAddToPlaylist?: () => void;
+  /** #16: PlaylistDetail では onDelete が「プレイリストから外す」の意味になるためラベルを差し替える */
+  deleteLabel?: string;
+  /** #16: 追加のアクション (並び替えの ↑↓ ボタン等) をカード右上に重ねて表示する */
+  extraActions?: React.ReactNode;
 }
 
 function formatDuration(raw: string | null): string | null {
@@ -43,6 +49,9 @@ export function VideoCard({
   selectable = false,
   selected = false,
   onToggleSelect,
+  onAddToPlaylist,
+  deleteLabel = '削除',
+  extraActions,
 }: VideoCardProps) {
   const dur = formatDuration(video.duration);
   const visibleTags = video.tags.slice(0, 3);
@@ -153,27 +162,43 @@ export function VideoCard({
         </div>
       )}
 
-      <div className="px-3 pb-3 flex justify-end gap-3">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onEdit();
-          }}
-          className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
-        >
-          編集
-        </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
-        >
-          削除
-        </button>
+      <div className={`px-3 pb-3 flex items-center gap-3 ${extraActions ? 'justify-between' : 'justify-end'}`}>
+        {extraActions && <div className="flex items-center gap-2">{extraActions}</div>}
+        <div className="flex items-center gap-3">
+          {onAddToPlaylist && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddToPlaylist();
+              }}
+              className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+              title="プレイリストに追加"
+            >
+              📋 追加
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            className="text-xs text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          >
+            編集
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="text-xs text-zinc-500 hover:text-red-400 transition-colors"
+          >
+            {deleteLabel}
+          </button>
+        </div>
       </div>
     </li>
   );

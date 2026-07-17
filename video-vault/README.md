@@ -116,6 +116,13 @@ npm run dev
 - 「未視聴」: 保存したまま一度も見ていない動画 (追加日が古い順)
 - 「見返していない高評価」: ★4以上なのに30日以上見返していない動画
 
+### プレイリストタブ
+
+- タグより強い「文脈」での整理 (例:「作業用」「あとで見る」)。手動の並び順を持つ (#16)
+- 動画カードの「📋 追加」から既存プレイリストに追加、またはその場で新規作成
+- 詳細画面で ↑↓ ボタンによる並び替え、名前クリックでリネーム、「外す」でプレイリストから除外 (動画自体は消えない)
+- プレイリストの削除は中の動画に影響しない (`ON DELETE CASCADE` で紐付けだけ消える)
+
 ## API
 
 `localhost:3001` のみで待ち受け。Cookie (JWT) または API トークンによる認証必須
@@ -141,6 +148,14 @@ npm run dev
 | DELETE | `/api/history?before=ISO` | 履歴削除 (`before` 省略で全削除) |
 | GET | `/api/jobs` | 定期ジョブ (サムネ補完・リンク切れ検知等) の実行状況 |
 | GET | `/thumbs/:filename` | ローカルキャッシュ済みサムネイル画像の配信 (`/api` 配下ではないが要認証) |
+| GET | `/api/playlists` | プレイリスト一覧 (動画件数込み) |
+| POST | `/api/playlists` | `{ name }` で新規作成 |
+| GET | `/api/playlists/:id` | プレイリスト詳細 + 並び順どおりの動画一覧 |
+| PATCH | `/api/playlists/:id` | `{ name }` でリネーム |
+| DELETE | `/api/playlists/:id` | プレイリスト削除 (中の動画は消えない) |
+| POST | `/api/playlists/:id/videos` | `{ videoId }` を末尾に追加 (冪等) |
+| DELETE | `/api/playlists/:id/videos/:videoId` | プレイリストから除外 |
+| PUT | `/api/playlists/:id/videos` | `{ videoIds }` で並び順を丸ごと置き換え |
 
 新規エンドポイント (`PATCH` / tags / history / trash 等) は `{ ok: true, data: {...} }` 形式、
 既存 (`/api/videos` GET POST など) は後方互換のため直接 JSON。
@@ -156,6 +171,8 @@ tags (id, name UNIQUE)
 video_tags (video_id, tag_id)  -- 多対多、CASCADE
 view_history (id, video_id, viewed_at)  -- 詳細履歴
 videos_fts (title, note, tags_text)  -- FTS5 trigram, videos.id と 1:1 (#12)
+playlists (id, name, created_at)
+playlist_videos (playlist_id, video_id, position)  -- 多対多、CASCADE、position で並び順 (#16)
 ```
 
 `PRAGMA user_version` でマイグレーションバージョンを管理。
