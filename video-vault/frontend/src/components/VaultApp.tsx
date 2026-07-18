@@ -34,7 +34,22 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
   const [adding, setAdding] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /** 元サイト削除検知などの一時的な通知 (数秒で消える) */
+  const [toast, setToast] = useState<string | null>(null);
   const debounceRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = window.setTimeout(() => setToast(null), 4000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+    };
+  }, []);
 
   const load = async () => {
     setError(null);
@@ -100,6 +115,17 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
     if (!confirm(`削除しますか?\n${v.title}`)) return;
     const ok = await deleteVideo(v.id);
     if (ok) setVideos((prev) => prev.filter((x) => x.id !== v.id));
+  };
+
+  /**
+   * 元サイト側で動画が削除されたことを VideoPlayer が検知した時に呼ばれる。
+   * サーバ側で videos レコードはもう物理削除済みなので、ローカル state からも除外。
+   */
+  const handleSourceGone = (videoId: number) => {
+    const removed = videos.find((v) => v.id === videoId);
+    setVideos((prev) => prev.filter((x) => x.id !== videoId));
+    const title = removed?.title ? `「${removed.title}」` : '動画';
+    showToast(`元サイトで削除されていたので${title}を一覧から消しました`);
   };
 
   const handleEditClose = (updated: Video | null) => {
@@ -253,7 +279,26 @@ export function VaultApp({ onLoggedOut }: VaultAppProps) {
 
       {adding && <AddVideoDialog onClose={handleAddClose} />}
       {editing && <EditVideoDialog video={editing} onClose={handleEditClose} />}
-      {playing && <VideoPlayer video={playing} onClose={() => setPlaying(null)} />}
+      {playing && (
+        <VideoPlayer
+          video={playing}
+          onClose={() => setPlaying(null)}
+          onSourceGone={handleSourceGone}
+        />
+      )}
+
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[60]
+                     px-4 py-2.5 rounded-lg bg-zinc-900/95 border border-zinc-700
+                     text-sm text-zinc-100 shadow-lg backdrop-blur
+                     max-w-[min(90vw,28rem)] text-center"
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 }

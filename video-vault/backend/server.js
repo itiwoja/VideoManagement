@@ -28,7 +28,7 @@ import {
 } from './lib/auth.js';
 import { requireAuth } from './lib/auth-mw.js';
 import { rateLimit } from './lib/rate-limit.js';
-import { extractMedia, extractMetadata } from './lib/extract.js';
+import { extractMedia, extractMetadata, SourceGoneError } from './lib/extract.js';
 import { saveProxyEntry, getProxyEntry } from './lib/proxy-store.js';
 
 // ----------------------------------------------------- env validation (fail fast)
@@ -321,6 +321,17 @@ protectedRouter.post('/extract', async (req, res) => {
     // ヘッダ不要 (og:video 直リンク・YouTube embed 等) はそのまま
     return successResponse(res, media);
   } catch (err) {
+    // 元サイトで動画が削除されたことが確定したら、該当 URL の videos レコードを物理削除
+    // (CASCADE で video_tags / view_history も自動掃除される)
+    if (err instanceof SourceGoneError) {
+      const deletedIds = videosRepo.removeByUrl(db, url);
+      return res.status(410).json({
+        ok: false,
+        error: 'source_gone',
+        reason: err.reason,
+        deleted_ids: deletedIds,
+      });
+    }
     return errorResponse(res, 500, err instanceof Error ? err.message : 'extract failed');
   }
 });

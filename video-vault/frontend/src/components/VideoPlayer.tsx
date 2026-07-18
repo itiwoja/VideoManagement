@@ -7,6 +7,12 @@ import { extractMedia, type ExtractedMedia } from '../lib/api';
 interface VideoPlayerProps {
   video: Video;
   onClose: () => void;
+  /**
+   * 元サイトで動画が削除されたことが検出された時 (HTTP 410 等) に呼ばれる。
+   * サーバ側で該当 video レコードはもう削除されているので、UI 側は state から
+   * 取り除いてプレイヤーを閉じれば良い。
+   */
+  onSourceGone?: (videoId: number) => void;
 }
 
 /**
@@ -15,7 +21,7 @@ interface VideoPlayerProps {
  * - .mp4 等の直リンクは <video> タグ
  * - それ以外 (X 等の埋め込み難しいサイト) は「元サイトで開く」ボタン
  */
-export function VideoPlayer({ video, onClose }: VideoPlayerProps) {
+export function VideoPlayer({ video, onClose, onSourceGone }: VideoPlayerProps) {
   const source = resolveSource(video.url);
 
   useEffect(() => {
@@ -98,7 +104,9 @@ export function VideoPlayer({ video, onClose }: VideoPlayerProps) {
           </video>
         )}
 
-        {source.type === 'unsupported' && <UnsupportedBlock video={video} onClose={onClose} />}
+        {source.type === 'unsupported' && (
+          <UnsupportedBlock video={video} onClose={onClose} onSourceGone={onSourceGone} />
+        )}
       </div>
     </div>
   );
@@ -117,16 +125,32 @@ type ExtractState =
  * Chrome 系は本来 hls.js が必要だが、bundle 肥大化を避けるために CDN から
  * 動的 import する。
  */
-function UnsupportedBlock({ video, onClose }: { video: Video; onClose: () => void }) {
+function UnsupportedBlock({
+  video,
+  onClose,
+  onSourceGone,
+}: {
+  video: Video;
+  onClose: () => void;
+  onSourceGone?: (videoId: number) => void;
+}) {
   const [state, setState] = useState<ExtractState>({ phase: 'idle' });
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<{ destroy: () => void } | null>(null);
 
   const tryExtract = async () => {
     setState({ phase: 'loading' });
-    const media = await extractMedia(video.url);
-    if (media) setState({ phase: 'success', media });
-    else setState({ phase: 'failed' });
+    const result = await extractMedia(video.url);
+    if (result.kind === 'ok') {
+      setState({ phase: 'success', media: result.media });
+    } else if (result.kind === 'gone') {
+      // 元サイトで削除されたことが確定。サーバ側でレコードも消えてるので、
+      // 親に通知してプレイヤーを閉じてもらう。
+      onSourceGone?.(video.id);
+      onClose();
+    } else {
+      setState({ phase: 'failed' });
+    }
   };
 
   useEffect(() => {

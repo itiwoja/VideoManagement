@@ -230,3 +230,19 @@ export function remove(db, id) {
   const result = db.prepare('DELETE FROM videos WHERE id = ?').run(id);
   return result.changes > 0;
 }
+
+/**
+ * 指定 URL に一致するレコードを物理削除する。
+ * 元サイトで動画が削除された (HTTP 410 等) と検出された時の自動掃除用。
+ * @param {import('node:sqlite').DatabaseSync} db
+ * @param {string} url
+ * @returns {number[]} 削除した video.id の配列
+ */
+export function removeByUrl(db, url) {
+  const rows = /** @type {{ id: number }[]} */ (
+    db.prepare('SELECT id FROM videos WHERE url = ?').all(url)
+  );
+  if (rows.length === 0) return [];
+  db.prepare('DELETE FROM videos WHERE url = ?').run(url);
+  return rows.map((r) => r.id);
+}

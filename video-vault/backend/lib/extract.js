@@ -27,6 +27,48 @@ const UA =
 const FETCH_TIMEOUT_MS = 12_000;
 
 /**
+ * 「元サイトから動画が削除済み」と確信できる場合にこれを throw する。
+ * server.js 側で catch して、該当 URL の videos レコードを物理削除する。
+ *
+ * 注意: 一時障害 (HTTP 5xx / 429 / Cloudflare 403 / ネットワーク切断) は
+ * 含めない。「明示的に消えた」シグナルだけ。
+ */
+export class SourceGoneError extends Error {
+  /** @param {string} reason */
+  constructor(reason) {
+    super(`source gone: ${reason}`);
+    this.name = 'SourceGoneError';
+    this.reason = reason;
+  }
+}
+
+/**
+ * yt-dlp の stderr / fetch のステータスから「削除済み」と判定するパターン。
+ * 偽陽性を避けるため、明示的な removed/deleted/unavailable 系のみ。
+ * @param {string} text
+ * @returns {string|null} 検出した代表文字列 (reason 用)、無ければ null
+ */
+function detectGoneSignal(text) {
+  if (!text) return null;
+  const patterns = [
+    /HTTP Error 410\b/i,
+    /HTTP Error 404\b/i,
+    /\bVideo unavailable\b/i,
+    /This video (?:has been|is no longer|is not) (?:removed|available)/i,
+    /\b(?:video|content) has been removed\b/i,
+    /\bremoved by (?:the )?user\b/i,
+    /\bThis video does not exist\b/i,
+    /\bSorry,? (?:this )?video (?:was|has been) (?:removed|deleted)\b/i,
+    /\bpage not found\b/i,
+  ];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (m) return m[0];
+  }
+  return null;
+}
+
+/**
  * yt-dlp.exe のパスを解決する。
  * 優先順位: env YT_DLP_PATH > tools/yt-dlp.exe > root/yt-dlp.exe (legacy)
  * @returns {string}
@@ -175,18 +217,22 @@ export async function extractMedia(pageUrl) {
     try {
       const result = await extractMissav(pageUrl);
       if (result) return result;
-    } catch {
-      // フォールバックに流れる
+    } catch (err) {
+      if (err instanceof SourceGoneError) throw err;
+      // それ以外はフォールバックに流れる
     }
   }
 
   // 既知の "HTML scrape よりも yt-dlp が信頼できる" サイトは先に yt-dlp 試す
+  // yt-dlp が明示的に「削除済み」と言ったら、HTML scrape をスキップして上に伝搬する
+  // (これらのサイトは HTML scrape も成功しないので、フォールバックする意味が無い)
   if (shouldPreferYtDlp(pageUrl)) {
     try {
       const ytdlp = await extractWithYtDlp(pageUrl);
       if (ytdlp) return ytdlp;
-    } catch {
-      // 失敗したら HTML scrape に流れる
+    } catch (err) {
+      if (err instanceof SourceGoneError) throw err;
+      // それ以外 (タイムアウト等) は HTML scrape に流れる
     }
   }
 
@@ -252,7 +298,8 @@ export async function extractMedia(pageUrl) {
   try {
     const ytdlp = await extractWithYtDlp(pageUrl);
     if (ytdlp) return ytdlp;
-  } catch {
+  } catch (err) {
+    if (err instanceof SourceGoneError) throw err;
     // yt-dlp が無いか、タイムアウトした場合は無視
   }
 
@@ -297,7 +344,13 @@ async function extractWithYtDlp(pageUrl) {
     });
   });
 
-  if (result.code !== 0 || !result.stdout) return null;
+  if (result.code !== 0 || !result.stdout) {
+    // 失敗時の stderr に「削除済み」シグナルがあれば SourceGoneError を投げる
+    // (一時障害と区別するため、明示的な removed/404/410 系のみ)
+    const goneReason = detectGoneSignal(result.stderr);
+    if (goneReason) throw new SourceGoneError(`yt-dlp: ${goneReason}`);
+    return null;
+  }
 
   /** @type {Record<string, unknown>} */
   let data;
@@ -430,11 +483,15 @@ async function fetchHtml(url) {
       redirect: 'follow',
       signal: controller.signal,
     });
+    if (res.status === 404 || res.status === 410) {
+      throw new SourceGoneError(`HTTP ${res.status}`);
+    }
     if (!res.ok) return null;
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('text/html') && !ct.includes('application/xhtml')) return null;
     return await res.text();
-  } catch {
+  } catch (err) {
+    if (err instanceof SourceGoneError) throw err;
     return null;
   } finally {
     clearTimeout(t);

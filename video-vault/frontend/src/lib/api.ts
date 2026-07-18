@@ -152,18 +152,38 @@ export interface ExtractedMedia {
   title?: string;
 }
 
+export type ExtractResult =
+  | { kind: 'ok'; media: ExtractedMedia }
+  /** 元サイト側で動画が削除済み (HTTP 410)。サーバ側で該当レコードも削除済み。 */
+  | { kind: 'gone'; deletedIds: number[] }
+  /** 一時的な失敗 (ネットワーク・抽出パーサ不一致など)。レコードは残る。 */
+  | { kind: 'failed' };
+
 /**
- * 任意 URL から再生可能な動画 URL を抽出。失敗時は null。
+ * 任意 URL から再生可能な動画 URL を抽出する。
+ * サーバが 410 + `error: 'source_gone'` を返したら、元サイトで削除されたことが
+ * 確定しているので呼び出し側で UI から該当エントリを除外する。
  */
-export async function extractMedia(pageUrl: string): Promise<ExtractedMedia | null> {
+export async function extractMedia(pageUrl: string): Promise<ExtractResult> {
   try {
-    const data = await jsonRequest<Api<ExtractedMedia>>(`/api/extract`, {
+    const res = await fetch('/api/extract', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: pageUrl }),
     });
-    return unwrap(data);
+    // 410 = SourceGoneError (元サイトから削除されたことが確定)
+    if (res.status === 410) {
+      const body = (await res.json().catch(() => null)) as
+        | { error?: string; deleted_ids?: number[] }
+        | null;
+      return { kind: 'gone', deletedIds: body?.deleted_ids ?? [] };
+    }
+    if (!res.ok) return { kind: 'failed' };
+    const data = (await res.json()) as Api<ExtractedMedia>;
+    if (!data.ok) return { kind: 'failed' };
+    return { kind: 'ok', media: data.data };
   } catch {
-    return null;
+    return { kind: 'failed' };
   }
 }
 
